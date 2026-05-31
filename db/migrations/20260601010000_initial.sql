@@ -76,6 +76,8 @@ CREATE TABLE workflow_waits (
   correlation_key TEXT NOT NULL UNIQUE,
   status workflow_wait_status NOT NULL,
   payload JSONB,
+  resume_payload JSONB,
+  resume_output JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   resumed_at TIMESTAMPTZ

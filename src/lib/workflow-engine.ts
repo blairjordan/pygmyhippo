@@ -212,6 +212,7 @@ const continueRun = async (args: {
         step: stepKey,
         status: "completed",
       })
+      return activeRun
     } catch (error) {
       if (error instanceof LostLeaseError) {
         return null
@@ -253,7 +254,6 @@ const continueRun = async (args: {
         step: stepKey,
         status: "failed",
       })
-
       return activeRun
     }
   }

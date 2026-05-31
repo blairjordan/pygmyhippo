@@ -202,6 +202,8 @@ const createStoreStub = () => {
         correlationKey: args.correlationKey,
         status: "open",
         payload: args.payload,
+        resumePayload: null,
+        resumeOutput: null,
         createdAt: now(),
         updatedAt: now(),
         resumedAt: null,
@@ -237,12 +239,17 @@ const createStoreStub = () => {
       }>
     }) {
       const wait = waits.get(args.correlationKey)
-      if (!wait || wait.status !== "open") {
-        return null
+      if (!wait) {
+        return { status: "missing" as const, run: null }
       }
       const run = runs.get(wait.runId)!
+      if (wait.status !== "open") {
+        return { status: "duplicate" as const, run }
+      }
       const resumed = await args.resume(run, wait)
       wait.status = "resumed"
+      wait.resumePayload = null
+      wait.resumeOutput = resumed.output
       wait.resumedAt = now()
       const next: WorkflowRunRecord = {
         ...run,
@@ -259,7 +266,7 @@ const createStoreStub = () => {
         eventType: "wait.resumed",
         payload: { nextStepKey: resumed.nextStepKey },
       })
-      return next
+      return { status: "resumed" as const, run: next }
     },
     async scheduleRetry(args: {
       runId: string
@@ -374,10 +381,16 @@ describe("workflow engine", () => {
     })
 
     await engine.tick("test-worker", 5_000)
+    const queued = await store.getRun(run.id)
+
+    expect(queued?.status).toBe("queued")
+    expect(queued?.currentStepKey).toBe("done")
+    expect(queued?.context).toEqual({ delivered: true })
+
+    await engine.tick("test-worker", 5_000)
     const completed = await store.getRun(run.id)
 
     expect(completed?.status).toBe("completed")
-    expect(completed?.context).toEqual({ delivered: true })
   })
 
   it("resumes a wait exactly once in the store contract", async () => {
@@ -419,8 +432,10 @@ describe("workflow engine", () => {
       payload: { status: "ok" },
     })
 
-    expect(first?.currentStepKey).toBe("done")
-    expect(second).toBeNull()
+    expect(first.status).toBe("resumed")
+    expect(first.run?.currentStepKey).toBe("done")
+    expect(second.status).toBe("duplicate")
+    expect(second.run?.id).toBe(first.run?.id)
   })
 
   it("schedules retries instead of failing immediately when configured", async () => {

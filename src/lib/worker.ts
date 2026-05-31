@@ -9,13 +9,16 @@ export const startWorkerLoop = (args: {
 }) => {
   let active = true
   let inFlight = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let inFlightPromise: Promise<void> | null = null
 
   const schedule = () => {
     if (!active) {
       return
     }
 
-    setTimeout(() => {
+    timer = setTimeout(() => {
+      timer = null
       void tick()
     }, args.pollIntervalMs)
   }
@@ -27,20 +30,31 @@ export const startWorkerLoop = (args: {
     }
 
     inFlight = true
+    inFlightPromise = (async () => {
+      try {
+        await args.engine.tick(args.workerId, args.leaseMs)
+      } catch (error) {
+        args.onError?.(error)
+      } finally {
+        inFlight = false
+        inFlightPromise = null
+        schedule()
+      }
+    })()
 
-    try {
-      await args.engine.tick(args.workerId, args.leaseMs)
-    } catch (error) {
-      args.onError?.(error)
-    } finally {
-      inFlight = false
-      schedule()
-    }
+    await inFlightPromise
   }
 
   void tick()
 
-  return () => {
+  return async () => {
     active = false
+
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+
+    await inFlightPromise
   }
 }

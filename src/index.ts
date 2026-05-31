@@ -30,7 +30,7 @@ const main = async () => {
   })
 
   const shutdown = async () => {
-    stopWorker()
+    await stopWorker()
     await app.close()
     await sql.end()
   }

@@ -44,6 +44,8 @@ export type WorkflowWaitRecord = {
   correlationKey: string
   status: "open" | "resumed" | "expired" | "canceled"
   payload: JsonValue | null
+  resumePayload: JsonValue | null
+  resumeOutput: JsonValue | null
   createdAt: Date
   updatedAt: Date
   resumedAt: Date | null

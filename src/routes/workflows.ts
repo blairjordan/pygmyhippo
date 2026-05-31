@@ -77,17 +77,18 @@ export const createWorkflowRoutes = (args: {
         : { correlationKey: params.correlationKey, payload: body.payload }
     )
 
-    if (!run) {
+    if (run.status === "missing") {
       throw app.httpErrors.notFound(
         `Open wait "${params.correlationKey}" not found`
       )
     }
 
-    reply.code(202)
+    reply.code(run.status === "duplicate" ? 200 : 202)
     return {
-      runId: run.id,
-      status: run.status,
-      currentStepKey: run.currentStepKey,
+      outcome: run.status,
+      runId: run.run?.id ?? null,
+      status: run.run?.status ?? null,
+      currentStepKey: run.run?.currentStepKey ?? null,
     }
   })
 

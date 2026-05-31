@@ -74,6 +74,8 @@ const mapAttempt = (row: IAttemptRow): WorkflowStepAttemptRecord => ({
 const mapWait = (row: IWaitRow): WorkflowWaitRecord => ({
   ...row,
   payload: row.payload,
+  resumePayload: row.resumePayload,
+  resumeOutput: row.resumeOutput,
 })
 
 const mapEvent = (row: IEventRow): WorkflowEventRecord => ({
@@ -326,7 +328,7 @@ export const createWorkflowStore = (db: Database) => {
       )
 
       if (!waitRow) {
-        return null
+        return { status: "missing" as const, run: null }
       }
 
       const wait = mapWait(waitRow)
@@ -336,8 +338,12 @@ export const createWorkflowStore = (db: Database) => {
       )
       const run = mapRun(requireRow(runRow, "Failed to load waiting run"))
 
+      if (wait.status !== "open") {
+        return { status: "duplicate" as const, run }
+      }
+
       if (run.status !== "waiting" || run.currentStepKey !== wait.stepKey) {
-        return null
+        return { status: "duplicate" as const, run }
       }
 
       const resumed = await args.resume(run, wait)
@@ -349,14 +355,20 @@ export const createWorkflowStore = (db: Database) => {
           stepKey: wait.stepKey,
           nextStepKey: resumed.nextStepKey,
           context: resumed.context,
+          resumePayload: args.payload ?? null,
           output: resumed.output,
           eventType: "wait.resumed",
-          eventPayload: { nextStepKey: resumed.nextStepKey },
+          eventPayload: {
+            nextStepKey: resumed.nextStepKey,
+            resumePayload: args.payload ?? null,
+          },
         },
         client
       )
 
-      return updatedRow ? mapRun(updatedRow) : null
+      return updatedRow
+        ? { status: "resumed" as const, run: mapRun(updatedRow) }
+        : { status: "duplicate" as const, run }
     })
 
   const countOpenWaits = async () => {

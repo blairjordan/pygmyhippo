@@ -42,6 +42,8 @@ export interface IWaitRow {
   correlationKey: string
   status: "open" | "resumed" | "expired" | "canceled"
   payload: Json | null
+  resumePayload: Json | null
+  resumeOutput: Json | null
   createdAt: Date
   updatedAt: Date
   resumedAt: Date | null
@@ -174,7 +176,7 @@ export const claimNextRunnableRunQuery = sql<{
   WITH candidate AS (
     SELECT id
     FROM workflow_runs
-    WHERE status = 'queued'
+    WHERE status IN ('queued', 'running')
       AND current_step_key IS NOT NULL
       AND available_at <= now()
       AND (lease_expires_at IS NULL OR lease_expires_at < now())
@@ -628,12 +630,13 @@ export const getOpenWaitForUpdateQuery = sql<{
     correlation_key AS "correlationKey",
     status,
     payload,
+    resume_payload AS "resumePayload",
+    resume_output AS "resumeOutput",
     created_at AS "createdAt",
     updated_at AS "updatedAt",
     resumed_at AS "resumedAt"
   FROM workflow_waits
   WHERE correlation_key = $correlationKey
-    AND status = 'open'
   FOR UPDATE
 `
 
@@ -669,6 +672,7 @@ export const completeWaitResumeQuery = sql<{
     stepKey: string
     nextStepKey: string
     context: Json
+    resumePayload: Json | null
     output: Json | null
     eventType: string
     eventPayload: Json
@@ -679,6 +683,8 @@ export const completeWaitResumeQuery = sql<{
     UPDATE workflow_waits
     SET
       status = 'resumed',
+      resume_payload = $resumePayload,
+      resume_output = $output,
       resumed_at = now(),
       updated_at = now()
     WHERE id = $waitId
