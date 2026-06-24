@@ -158,9 +158,10 @@ Tier 4 — SDK + packaging (PROMOTED — DX is the pitch, not features)
 Tier 5 — DX parity with Trigger.dev (this is the actual pitch)
   Driver feedback: "Temporal too complicated to set up. Trigger.dev easier, better local/staging/prod handling."
   Goal: 5 minutes from `git clone` to seeing a workflow execute. Same config working locally, staging, prod with no rewrites.
-- [ ] `npx hippo init` scaffold command
+- [~] `npx hippo init` scaffold command
+  Current state: local `hippo dev` foundation exists in-repo (`docker-compose.yml`, `.env.example`, tested `hippo:dev` orchestration). Packaging and starter generation still need the actual `init` command.
   Creates: docker-compose.yml (Postgres + hippo container), .env with safe defaults, src/workflows/example.ts, package.json scripts, README. One command, working demo.
-- [ ] `hippo dev` — single command starts everything
+- [x] `hippo dev` — single command starts everything
   Spawns Postgres via docker-compose (if not running), runs migrations, starts hippo server + worker with hot-reload of workflows (tsx watch). Logs colored, structured.
 - [~] Web dashboard (Trigger.dev's killer feature)
   Current state: embedded `/dashboard` route with active/failed run lists, workflow definition Mermaid views, run detail page, and live event tail.

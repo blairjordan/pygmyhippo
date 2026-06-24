@@ -76,6 +76,17 @@ Development:
 
 ```bash
 npm install
+cp .env.example .env
+npm run hippo:dev
+```
+
+This starts local Postgres via `docker compose`, waits for the database port,
+runs migrations, then launches the API and worker with `tsx watch`.
+
+If you prefer the steps manually:
+
+```bash
+docker compose up -d postgres
 npm run db:migrate
 npm run typecheck
 npm run test
@@ -91,7 +102,7 @@ Start a run:
 curl -X POST \
   -H "Authorization: Bearer $HIPPO_API_TOKEN" \
   -H "Content-Type: application/json" \
-  http://127.0.0.1:3000/v1/workflows/demo/runs \
+  http://127.0.0.1:3000/v1/workflows/demo-delivery/runs \
   -d '{}'
 ```
 
