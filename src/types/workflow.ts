@@ -15,6 +15,7 @@ export type StepAttemptStatus = "started" | "completed" | "failed"
 export type WorkflowRunRecord = {
   id: string
   parentRunId: string | null
+  parentStepKey: string | null
   definitionName: string
   definitionVersion: number
   status: WorkflowRunStatus
@@ -76,6 +77,8 @@ export type WorkflowStepAttemptRecord = {
 export type RetryPolicy = {
   maxAttempts: number
   backoffMs?: number
+  maxBackoffMs?: number
+  jitter?: boolean
   nonRetryableErrorTags?: string[]
 }
 
@@ -106,6 +109,43 @@ export type SignalRecord = {
   updatedAt: Date
 }
 
+export type WorkflowScheduleRecord = {
+  id: string
+  workflowName: string
+  cronExpression: string
+  payload: JsonObject
+  active: boolean
+  nextFireAt: Date
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type WorkflowOutboxRecord = {
+  id: string
+  runId: string | null
+  topic: string
+  payload: JsonObject
+  availableAt: Date
+  deliveredAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type WorkflowStepDatabase = {
+  query<T extends object = Record<string, unknown>>(
+    text: string,
+    values?: readonly unknown[]
+  ): Promise<{ rows: T[] }>
+}
+
+export type WorkflowStepOutbox = {
+  enqueue: (input: {
+    topic: string
+    payload: JsonObject
+    availableAt?: Date
+  }) => Promise<void>
+}
+
 export type StepExecutionContext = {
   run: WorkflowRunRecord
   input: JsonObject
@@ -114,6 +154,9 @@ export type StepExecutionContext = {
   attempt: number
   idempotencyKey: string
   heartbeat: () => Promise<boolean>
+  db: WorkflowStepDatabase
+  outbox: WorkflowStepOutbox
+  transactional: boolean
 }
 
 export type TaskStepDefinition = {
@@ -123,6 +166,7 @@ export type TaskStepDefinition = {
   transitions?: Record<string, string>
   retry?: RetryPolicy
   timeoutMs?: number
+  transactional?: boolean
   run: (context: StepExecutionContext) => Promise<TaskStepResult> | TaskStepResult
 }
 
@@ -154,6 +198,27 @@ export type SignalStepDefinition = {
   ) => Promise<WaitStepResumeResult> | WaitStepResumeResult
 }
 
+export type ChildStepResult = {
+  patch?: JsonObject
+  transition?: string
+  output?: JsonValue
+}
+
+export type ChildStepDefinition = {
+  kind: "child"
+  label?: string
+  workflow: string
+  next?: string
+  transitions?: Record<string, string>
+  input: (
+    context: StepExecutionContext
+  ) => Promise<JsonObject> | JsonObject
+  resume: (
+    context: StepExecutionContext,
+    childRun: WorkflowRunRecord
+  ) => Promise<ChildStepResult> | ChildStepResult
+}
+
 export type SleepStepDefinition = {
   kind: "sleep"
   label?: string
@@ -174,6 +239,7 @@ export type WorkflowStepDefinition =
   | TaskStepDefinition
   | WaitStepDefinition
   | SignalStepDefinition
+  | ChildStepDefinition
   | SleepStepDefinition
   | EndStepDefinition
 

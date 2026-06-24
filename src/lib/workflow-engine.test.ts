@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  childStep,
   defineWorkflow,
   endStep,
   signalStep,
@@ -13,6 +14,7 @@ import { createWorkflowEngine } from "./workflow-engine.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
   SignalRecord,
+  StepExecutionContext,
   TaskStepResult,
   WorkflowEventRecord,
   WorkflowRunRecord,
@@ -85,6 +87,41 @@ const createStoreStub = () => {
     }
     events.push(event)
     return event
+  }
+
+  const wakeParentForChildRun = (childRun: WorkflowRunRecord) => {
+    if (!childRun.parentRunId || !childRun.parentStepKey) {
+      return false
+    }
+
+    const correlationKey = `child:${childRun.parentRunId}:${childRun.parentStepKey}`
+    const wait = waits.get(correlationKey)
+
+    if (!wait || wait.status !== "open") {
+      return false
+    }
+
+    wait.status = "resumed"
+    wait.resumePayload = {
+      childRunId: childRun.id,
+      childStatus: childRun.status,
+    }
+    wait.resumedAt = now()
+
+    const parentRun = runs.get(childRun.parentRunId)
+
+    if (!parentRun) {
+      return false
+    }
+
+    runs.set(parentRun.id, {
+      ...parentRun,
+      status: "queued",
+      availableAt: now(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    })
+    return true
   }
 
   return {
@@ -188,6 +225,7 @@ const createStoreStub = () => {
       }
       runs.set(run.id, next)
       appendEvent({ runId: run.id, stepKey: run.currentStepKey, eventType: "run.completed" })
+      wakeParentForChildRun(next)
       return next
     },
     async countOpenWaits() {
@@ -272,6 +310,66 @@ const createStoreStub = () => {
     async cancelRun() {
       throw new Error("not used")
     },
+    async cancelRunAtBoundary() {
+      throw new Error("not used")
+    },
+    async claimOutboxMessages() {
+      return []
+    },
+    async createSchedule() {
+      throw new Error("not used")
+    },
+    async enqueueOutbox() {
+      return undefined
+    },
+    async executeTransactionalTask(args: {
+      run: WorkflowRunRecord
+      stepKey: string
+      workerId: string
+      nextStepKey?: string
+      runTask: (context: StepExecutionContext) => Promise<TaskStepResult> | TaskStepResult
+      mergeContext: (left: JsonObject, right?: JsonObject) => JsonObject
+    }) {
+      const result = await args.runTask({
+        run: args.run,
+        input: args.run.input,
+        context: args.run.context,
+        now: now(),
+        attempt: 1,
+        idempotencyKey: `${args.run.id}:${args.stepKey}`,
+        heartbeat: async () => false,
+        db: {
+          query: async () => ({
+            rows: [],
+          }),
+        },
+        outbox: {
+          enqueue: async () => undefined,
+        },
+        transactional: true,
+      })
+      const run = runs.get(args.run.id)!
+      const next: WorkflowRunRecord = {
+        ...run,
+        status: "queued",
+        currentStepKey: result.transition ?? args.nextStepKey ?? "done",
+        context: args.mergeContext(run.context, result.patch),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        availableAt: now(),
+      }
+      runs.set(run.id, next)
+      appendEvent({
+        runId: run.id,
+        stepKey: args.stepKey,
+        eventType: "step.completed",
+        payload: { nextStepKey: next.currentStepKey ?? "done" },
+      })
+      return {
+        outcome: "completed" as const,
+        run: next,
+      }
+    },
     async failRun(args: {
       runId: string
       stepKey: string
@@ -293,10 +391,23 @@ const createStoreStub = () => {
       }
       runs.set(run.id, next)
       appendEvent({ runId: run.id, stepKey: args.stepKey, eventType: "step.failed", payload: args.error })
+      wakeParentForChildRun(next)
       return next
     },
     async getRun(runId: string) {
       return runs.get(runId) ?? null
+    },
+    async fireDueSchedules() {
+      return []
+    },
+    async getChildRun(args: { parentRunId: string; parentStepKey: string }) {
+      return (
+        [...runs.values()].find(
+          (run) =>
+            run.parentRunId === args.parentRunId &&
+            run.parentStepKey === args.parentStepKey
+        ) ?? null
+      )
     },
     async getRunAttempts(runId: string) {
       return attempts.filter((attempt) => attempt.runId === runId)
@@ -309,11 +420,20 @@ const createStoreStub = () => {
         ["queued", "running", "waiting"].includes(run.status)
       )
     },
+    async listChildRuns(parentRunId: string) {
+      return [...runs.values()].filter((run) => run.parentRunId === parentRunId)
+    },
     async listFailedRuns() {
       return [...runs.values()].filter((run) => run.status === "failed")
     },
+    async listSchedules() {
+      return []
+    },
     async listStuckRuns() {
       return []
+    },
+    async markOutboxDelivered() {
+      return true
     },
     async openWait(args: {
       runId: string
@@ -457,7 +577,15 @@ const createStoreStub = () => {
       })
       return next
     },
+    async queryStepDatabase() {
+      return { rows: [] }
+    },
+    async requestCancelRun() {
+      throw new Error("not used")
+    },
     async startRun(args: {
+      parentRunId?: string | null
+      parentStepKey?: string | null
       definitionName: string
       definitionVersion: number
       input: JsonObject
@@ -465,7 +593,8 @@ const createStoreStub = () => {
     }) {
       const run: WorkflowRunRecord = {
         id: `run-${++runCounter}`,
-        parentRunId: null,
+        parentRunId: args.parentRunId ?? null,
+        parentStepKey: args.parentStepKey ?? null,
         definitionName: args.definitionName,
         definitionVersion: args.definitionVersion,
         status: "queued",
@@ -492,6 +621,9 @@ const createStoreStub = () => {
     },
     async retryRun() {
       throw new Error("not used")
+    },
+    async wakeParentForChild(childRun: WorkflowRunRecord) {
+      return wakeParentForChildRun(childRun)
     },
   }
 }
@@ -1106,5 +1238,114 @@ describe("workflow engine", () => {
 
     const failed = await store.getRun(run.id)
     expect(failed?.status).toBe("failed")
+  })
+
+  it("runs child workflows and resumes the parent", async () => {
+    const childWorkflow = defineWorkflow({
+      name: "child-unit",
+      version: 1,
+      startAt: "work",
+      steps: {
+        work: taskStep({
+          kind: "task",
+          next: "done",
+          run: () => ({
+            patch: {
+              childValue: "ok",
+            },
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const parentWorkflow = defineWorkflow({
+      name: "parent-unit",
+      version: 1,
+      startAt: "spawn",
+      steps: {
+        spawn: childStep({
+          kind: "child",
+          workflow: childWorkflow.name,
+          next: "done",
+          input: () => ({
+            fromParent: true,
+          }),
+          resume: (_context, childRun) => ({
+            patch: {
+              childStatus: childRun.status,
+            },
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [parentWorkflow, childWorkflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const parentRun = await engine.startRun({
+      workflowName: parentWorkflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const completedParent = await store.getRun(parentRun.id)
+    const childRuns = await store.listChildRuns(parentRun.id)
+
+    expect(completedParent?.status).toBe("completed")
+    expect(completedParent?.context.childStatus).toBe("completed")
+    expect(childRuns).toHaveLength(1)
+    expect(childRuns[0]?.status).toBe("completed")
+  })
+
+  it("dispatches transactional tasks through the transactional store path", async () => {
+    const workflow = defineWorkflow({
+      name: "transactional-unit",
+      version: 1,
+      startAt: "save",
+      steps: {
+        save: taskStep({
+          kind: "task",
+          transactional: true,
+          next: "done",
+          run: async (context) => {
+            expect(context.transactional).toBe(true)
+            await context.outbox.enqueue({
+              topic: "email",
+              payload: {
+                ok: true,
+              },
+            })
+            return {
+              patch: {
+                saved: true,
+              },
+            }
+          },
+        }),
+        done: endStep(),
+      },
+    })
+    const transactionalStore = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store: transactionalStore,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const completed = await transactionalStore.getRun(run.id)
+    expect(completed?.status).toBe("completed")
+    expect(completed?.context.saved).toBe(true)
   })
 })

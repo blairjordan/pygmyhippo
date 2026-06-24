@@ -6,7 +6,10 @@ import {
 import { getConfig } from "./lib/config.js"
 import { createDatabase } from "./lib/db.js"
 import { createMetrics } from "./lib/metrics.js"
+import { createWorkflowNotifier } from "./lib/notifier.js"
+import { startOutboxLoop } from "./lib/outbox.js"
 import { startRecoveryLoop } from "./lib/recovery.js"
+import { startScheduleLoop } from "./lib/scheduler.js"
 import { startWorkerLoop } from "./lib/worker.js"
 import { createWorkflowEngine } from "./lib/workflow-engine.js"
 import { createWorkflowStore } from "./lib/workflow-store.js"
@@ -16,7 +19,10 @@ const main = async () => {
   const config = getConfig()
   const sql = createDatabase(config)
   const metrics = createMetrics()
-  const store = createWorkflowStore(sql)
+  const notifier = createWorkflowNotifier(config)
+  const store = createWorkflowStore(sql, {
+    notifyRunnable: () => notifier.notifyRunnable(),
+  })
   const engine = createWorkflowEngine({
     definitions: workflows,
     metrics,
@@ -36,6 +42,7 @@ const main = async () => {
     workerId: config.HIPPO_WORKER_ID,
     pollIntervalMs: config.HIPPO_POLL_INTERVAL_MS,
     leaseMs: config.HIPPO_LEASE_MS,
+    listenForWakeups: notifier.listen,
     onError: (error) => {
       app.log.error(error)
     },
@@ -49,10 +56,30 @@ const main = async () => {
     },
     store,
   })
+  const stopScheduler = startScheduleLoop({
+    engine,
+    intervalMs: config.HIPPO_SCHEDULE_INTERVAL_MS,
+    limit: 100,
+    onError: (error) => {
+      app.log.error(error)
+    },
+    store,
+  })
+  const stopOutbox = startOutboxLoop({
+    handlers: {},
+    intervalMs: config.HIPPO_OUTBOX_INTERVAL_MS,
+    limit: 100,
+    onError: (error, record) => {
+      app.log.error({ error, record })
+    },
+    store,
+  })
 
   const shutdown = async () => {
     await stopWorker()
     await stopRecovery()
+    await stopScheduler()
+    await stopOutbox()
     await app.close()
     await sql.end()
   }

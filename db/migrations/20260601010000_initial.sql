@@ -26,6 +26,7 @@ CREATE TYPE workflow_wait_status AS ENUM (
 CREATE TABLE workflow_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_run_id UUID REFERENCES workflow_runs (id) ON DELETE CASCADE,
+  parent_step_key TEXT,
   definition_name TEXT NOT NULL,
   definition_version INTEGER NOT NULL,
   status workflow_run_status NOT NULL,

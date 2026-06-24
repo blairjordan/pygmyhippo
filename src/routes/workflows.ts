@@ -9,6 +9,7 @@ import { renderWorkflowAsMermaid } from "../lib/workflow-definition.js"
 import type { HippoAuth } from "../lib/auth.js"
 import type { HippoMetrics } from "../lib/metrics.js"
 import { runRecoveryPass } from "../lib/recovery.js"
+import { computeNextScheduleFireAt } from "../lib/scheduler.js"
 import type { WorkflowEngine } from "../lib/workflow-engine.js"
 import type { WorkflowStore } from "../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
@@ -60,7 +61,14 @@ const signalParamsSchema = z.object({
 })
 
 const cancelRunBodySchema = z.object({
+  mode: z.enum(["graceful", "hard"]).default("graceful"),
   reason: z.string().min(1).max(1_000).optional(),
+})
+
+const createScheduleBodySchema = z.object({
+  workflowName: z.string().min(1),
+  cronExpression: z.string().min(1),
+  payload: startRunBodySchema.optional(),
 })
 
 const reconcileBodySchema = z.object({
@@ -100,6 +108,30 @@ const getExistingRun = async (
   }
 
   return run
+}
+
+const propagateCancellation = async (args: {
+  mode: "graceful" | "hard"
+  reason: string | undefined
+  runId: string
+  store: WorkflowStore
+}) => {
+  const childRuns = await args.store.listChildRuns(args.runId)
+
+  for (const childRun of childRuns) {
+    await args.store.requestCancelRun({
+      runId: childRun.id,
+      mode: args.mode,
+      ...(args.reason === undefined ? {} : { reason: args.reason }),
+    })
+
+    await propagateCancellation({
+      mode: args.mode,
+      reason: args.reason,
+      runId: childRun.id,
+      store: args.store,
+    })
+  }
 }
 
 export const createWorkflowRoutes = (args: {
@@ -176,17 +208,60 @@ export const createWorkflowRoutes = (args: {
       )
     }
 
-    const run = await args.store.cancelRun(
-      body.reason === undefined
-        ? { runId: params.runId }
-        : { runId: params.runId, reason: body.reason }
-    )
+    const run = await args.store.requestCancelRun({
+      runId: params.runId,
+      mode: body.mode,
+      ...(body.reason === undefined ? {} : { reason: body.reason }),
+    })
 
     if (!run) {
       throw app.httpErrors.conflict(
         `Run "${params.runId}" could not be canceled`
       )
     }
+
+    await propagateCancellation({
+      mode: body.mode,
+      reason: body.reason,
+      runId: run.id,
+      store: args.store,
+    })
+
+    return {
+      runId: run.id,
+      status: run.status,
+      currentStepKey: run.currentStepKey,
+    }
+  })
+
+  app.post("/v1/operators/runs/:runId/terminate", async (request) => {
+    requireApiAuth(app, request, args.auth)
+
+    const params = runIdParamsSchema.parse(request.params)
+    const body = z
+      .object({
+        reason: z.string().min(1).max(1_000).optional(),
+      })
+      .parse(request.body ?? {})
+
+    const run = await args.store.requestCancelRun({
+      runId: params.runId,
+      mode: "hard",
+      ...(body.reason === undefined ? {} : { reason: body.reason }),
+    })
+
+    if (!run) {
+      throw app.httpErrors.conflict(
+        `Run "${params.runId}" could not be terminated`
+      )
+    }
+
+    await propagateCancellation({
+      mode: "hard",
+      reason: body.reason,
+      runId: run.id,
+      store: args.store,
+    })
 
     return {
       runId: run.id,
@@ -235,6 +310,32 @@ export const createWorkflowRoutes = (args: {
 
     return {
       reclaimed,
+    }
+  })
+
+  app.post("/v1/operators/schedules", async (request, reply) => {
+    requireApiAuth(app, request, args.auth)
+
+    const body = createScheduleBodySchema.parse(request.body ?? {})
+
+    if (!args.engine.hasWorkflow(body.workflowName)) {
+      throw app.httpErrors.notFound(
+        `Workflow "${body.workflowName}" is not registered`
+      )
+    }
+
+    const schedule = await args.store.createSchedule({
+      workflowName: body.workflowName,
+      cronExpression: body.cronExpression,
+      payload: body.payload ?? {},
+      nextFireAt: computeNextScheduleFireAt({
+        cronExpression: body.cronExpression,
+      }),
+    })
+
+    reply.code(201)
+    return {
+      schedule,
     }
   })
 

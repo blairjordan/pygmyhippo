@@ -43,4 +43,44 @@ describe("worker loop", () => {
     resolveTick?.()
     await stopPromise
   })
+
+  it("wakes immediately when the listener notifies", async () => {
+    const tick = vi.fn(async () => null)
+    let onWake: (() => void) | undefined
+    const engine = {
+      getWorkflow() {
+        throw new Error("not used")
+      },
+      hasWorkflow() {
+        return true
+      },
+      async resumeWait() {
+        throw new Error("not used")
+      },
+      async startRun() {
+        throw new Error("not used")
+      },
+      tick,
+    } satisfies WorkflowEngine
+
+    const stop = startWorkerLoop({
+      engine,
+      workerId: "worker-1",
+      pollIntervalMs: 10_000,
+      leaseMs: 5_000,
+      listenForWakeups: async (listener) => {
+        onWake = listener
+        return async () => undefined
+      },
+    })
+
+    expect(tick).toHaveBeenCalledTimes(1)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    onWake?.()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await stop()
+
+    expect(tick).toHaveBeenCalledTimes(2)
+  })
 })

@@ -21,6 +21,7 @@ const createRunRecord = (
 ): WorkflowRunRecord => ({
   id: "run-1",
   parentRunId: null,
+  parentStepKey: null,
   definitionName: demoWorkflow.name,
   definitionVersion: demoWorkflow.version,
   status: "queued",
@@ -61,8 +62,14 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async cancelRun() {
     return createRunRecord({ status: "canceled" })
   },
+  async cancelRunAtBoundary() {
+    return createRunRecord({ status: "canceled" })
+  },
   async claimNextRunnableRun() {
     return null
+  },
+  async claimOutboxMessages() {
+    return []
   },
   async completeRun() {
     throw new Error("not used")
@@ -76,14 +83,29 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async createSignal(args: { runId: string }) {
     return args.runId
   },
+  async createSchedule() {
+    throw new Error("not used")
+  },
+  async enqueueOutbox() {
+    return undefined
+  },
   async extendLease() {
     return true
+  },
+  async executeTransactionalTask() {
+    throw new Error("not used")
   },
   async expireOpenWaits() {
     return 0
   },
   async failRun() {
     throw new Error("not used")
+  },
+  async fireDueSchedules() {
+    return []
+  },
+  async getChildRun() {
+    return null
   },
   async getRun() {
     return null
@@ -97,11 +119,20 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async listActiveRuns() {
     return []
   },
+  async listChildRuns() {
+    return []
+  },
   async listFailedRuns() {
+    return []
+  },
+  async listSchedules() {
     return []
   },
   async listStuckRuns() {
     return []
+  },
+  async markOutboxDelivered() {
+    return true
   },
   async openWait() {
     throw new Error("not used")
@@ -115,6 +146,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   },
   async recoverExpiredLeases() {
     return 0
+  },
+  async requestCancelRun() {
+    return createRunRecord({ status: "queued", cancelRequestedAt: new Date(), cancelMode: "graceful" })
   },
   async resumeWait() {
     return { status: "missing" as const, run: null }
@@ -131,18 +165,28 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async scheduleSleep() {
     throw new Error("not used")
   },
+  async queryStepDatabase() {
+    return { rows: [] }
+  },
   async startRun(args: {
+    parentRunId?: string | null
+    parentStepKey?: string | null
     definitionName: string
     definitionVersion: number
     input: JsonObject
     currentStepKey: string
   }) {
     return createRunRecord({
+      parentRunId: args.parentRunId ?? null,
+      parentStepKey: args.parentStepKey ?? null,
       definitionName: args.definitionName,
       definitionVersion: args.definitionVersion,
       currentStepKey: args.currentStepKey,
       input: args.input,
     })
+  },
+  async wakeParentForChild() {
+    return false
   },
 })
 

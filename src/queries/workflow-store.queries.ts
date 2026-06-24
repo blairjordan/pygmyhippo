@@ -5,6 +5,7 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
 export interface IRunRow {
   id: string
   parentRunId?: string | null
+  parentStepKey?: string | null
   definitionName: string
   definitionVersion: number
   status: string
@@ -75,6 +76,8 @@ export interface IEventRow {
 
 export const insertRunQuery = sql<{
   params: {
+    parentRunId?: string | null
+    parentStepKey?: string | null
     definitionName: string
     definitionVersion: number
     currentStepKey: string
@@ -83,6 +86,8 @@ export const insertRunQuery = sql<{
   result: IRunRow
 }>`
   INSERT INTO workflow_runs (
+    parent_run_id,
+    parent_step_key,
     definition_name,
     definition_version,
     status,
@@ -90,6 +95,8 @@ export const insertRunQuery = sql<{
     input,
     context
   ) VALUES (
+    $parentRunId,
+    $parentStepKey,
     $definitionName,
     $definitionVersion,
     'queued',
@@ -99,6 +106,8 @@ export const insertRunQuery = sql<{
   )
   RETURNING
     id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
     definition_name AS "definitionName",
     definition_version AS "definitionVersion",
     status,
@@ -121,6 +130,8 @@ export const getRunByIdQuery = sql<{
 }>`
   SELECT
     id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
     definition_name AS "definitionName",
     definition_version AS "definitionVersion",
     status,
@@ -686,6 +697,8 @@ export const getRunByIdForUpdateQuery = sql<{
 }>`
   SELECT
     id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
     definition_name AS "definitionName",
     definition_version AS "definitionVersion",
     status,
@@ -874,8 +887,26 @@ export const createSignalQuery = sql<{
   ), updated_run AS (
     UPDATE workflow_runs
     SET
-      status = CASE WHEN status = 'waiting' THEN 'queued' ELSE status END,
-      available_at = CASE WHEN status = 'waiting' THEN now() ELSE available_at END,
+      status = CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM workflow_waits
+          WHERE run_id = workflow_runs.id
+            AND correlation_key = ('signal:' || workflow_runs.id::text || ':' || $signalName)
+            AND status = 'open'
+        ) THEN 'queued'::workflow_run_status
+        ELSE status
+      END,
+      available_at = CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM workflow_waits
+          WHERE run_id = workflow_runs.id
+            AND correlation_key = ('signal:' || workflow_runs.id::text || ':' || $signalName)
+            AND status = 'open'
+        ) THEN now()
+        ELSE available_at
+      END,
       updated_at = now()
     WHERE id = $runId
     RETURNING id

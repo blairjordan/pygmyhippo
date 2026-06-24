@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
+  ChildStepResult,
   SleepStepDefinition,
   StepExecutionContext,
   TaskStepResult,
@@ -63,6 +64,9 @@ const createExecutionContext = (args: {
   attempt: number
   stepKey: string
   heartbeat: () => Promise<boolean>
+  db: StepExecutionContext["db"]
+  outbox: StepExecutionContext["outbox"]
+  transactional: boolean
 }): StepExecutionContext => ({
   run: args.run,
   input: args.run.input,
@@ -71,6 +75,9 @@ const createExecutionContext = (args: {
   attempt: args.attempt,
   idempotencyKey: `${args.run.id}:${args.stepKey}`,
   heartbeat: args.heartbeat,
+  db: args.db,
+  outbox: args.outbox,
+  transactional: args.transactional,
 })
 
 const createStepInput = (
@@ -109,8 +116,37 @@ const resolveSleepUntil = (
 const getStepExpiresAt = (timeoutMs: number, now: Date) =>
   new Date(now.getTime() + timeoutMs)
 
-const getRetryAvailableAt = (attempt: number, backoffMs = 1_000) =>
-  new Date(Date.now() + backoffMs * attempt)
+const getRetryAvailableAt = (args: {
+  attempt: number
+  backoffMs?: number
+  maxBackoffMs?: number
+  jitter?: boolean
+}) => {
+  const baseBackoff = args.backoffMs ?? 1_000
+  const exponentialDelay = baseBackoff * 2 ** Math.max(0, args.attempt - 1)
+  const cappedDelay = Math.min(
+    exponentialDelay,
+    args.maxBackoffMs ?? exponentialDelay
+  )
+  const jitterMultiplier = args.jitter === false ? 1 : 0.5 + Math.random() * 0.5
+
+  return new Date(Date.now() + Math.round(cappedDelay * jitterMultiplier))
+}
+
+const isTerminalStatus = (status: WorkflowRunRecord["status"]) =>
+  status === "completed" || status === "failed" || status === "canceled"
+
+const createRetryDelayInput = (retryPolicy: {
+  backoffMs?: number
+  maxBackoffMs?: number
+  jitter?: boolean
+}) => ({
+  ...(retryPolicy.backoffMs === undefined ? {} : { backoffMs: retryPolicy.backoffMs }),
+  ...(retryPolicy.maxBackoffMs === undefined
+    ? {}
+    : { maxBackoffMs: retryPolicy.maxBackoffMs }),
+  ...(retryPolicy.jitter === undefined ? {} : { jitter: retryPolicy.jitter }),
+})
 
 const getErrorTag = (error: unknown) => {
   if (!error || typeof error !== "object") {
@@ -191,6 +227,41 @@ const continueRun = async (args: {
   while (activeRun.currentStepKey) {
     const stepKey = activeRun.currentStepKey
     const step = getStep(definition, stepKey)
+    const stepBindings = {
+      db: {
+        query: args.store.queryStepDatabase,
+      },
+      outbox: {
+        enqueue: async (input: {
+          topic: string
+          payload: JsonObject
+          availableAt?: Date
+        }) => {
+          await args.store.enqueueOutbox({
+            runId: activeRun.id,
+            topic: input.topic,
+            payload: input.payload,
+            ...(input.availableAt === undefined
+              ? {}
+              : { availableAt: input.availableAt }),
+          })
+        },
+      },
+    }
+
+    if (
+      activeRun.cancelRequestedAt !== null &&
+      activeRun.cancelMode === "graceful"
+    ) {
+      const canceled = await args.store.cancelRunAtBoundary({
+        runId: activeRun.id,
+        stepKey,
+        workerId: args.workerId,
+        mode: activeRun.cancelMode,
+      })
+
+      return canceled
+    }
 
     if (step.kind === "end") {
       const completed = await args.store.completeRun({
@@ -218,6 +289,9 @@ const continueRun = async (args: {
           attempt: 0,
           stepKey,
           heartbeat: async () => false,
+          db: stepBindings.db,
+          outbox: stepBindings.outbox,
+          transactional: false,
         })
       )
 
@@ -248,6 +322,9 @@ const continueRun = async (args: {
           workerId: args.workerId,
           leaseMs: 15_000,
         }),
+      db: stepBindings.db,
+      outbox: stepBindings.outbox,
+      transactional: false,
     })
 
     try {
@@ -292,6 +369,9 @@ const continueRun = async (args: {
             attempt: args.attempt,
             stepKey,
             heartbeat: async () => false,
+            db: stepBindings.db,
+            outbox: stepBindings.outbox,
+            transactional: false,
           })
           const result: WaitStepResumeResult = await step.resume(
             signalExecutionContext,
@@ -373,8 +453,157 @@ const continueRun = async (args: {
         return activeRun
       }
 
+      if (step.kind === "child") {
+        const childRun = await args.store.getChildRun({
+          parentRunId: activeRun.id,
+          parentStepKey: stepKey,
+        })
+
+        const resumeChild = async (run: WorkflowRunRecord) => {
+          const childExecutionContext = createExecutionContext({
+            run: activeRun,
+            attempt: attempt.attempt,
+            stepKey,
+            heartbeat: async () => false,
+            db: stepBindings.db,
+            outbox: stepBindings.outbox,
+            transactional: false,
+          })
+          const result: ChildStepResult = await step.resume(
+            childExecutionContext,
+            run
+          )
+          const nextStepKey = result.transition ?? step.next
+
+          if (!nextStepKey) {
+            throw new Error(
+              `Child step "${stepKey}" in workflow "${definition.name}" did not resolve a next step`
+            )
+          }
+
+          return {
+            nextStepKey,
+            context: mergeContext(activeRun.context, result.patch),
+            output: result.output ?? run.result ?? null,
+          }
+        }
+
+        if (childRun && isTerminalStatus(childRun.status)) {
+          const result = await resumeChild(childRun)
+          activeRun = await args.store.advanceTaskStep({
+            runId: activeRun.id,
+            stepKey,
+            workerId: args.workerId,
+            attemptId: attempt.id,
+            nextStepKey: result.nextStepKey,
+            context: result.context,
+            output: result.output,
+          })
+
+          args.metrics.stepAttempts.inc({
+            workflow: definition.name,
+            step: stepKey,
+            status: "completed",
+          })
+          return activeRun
+        }
+
+        if (!childRun) {
+          const childInput = await Promise.resolve(step.input(executionContext))
+          await args.store.startRun({
+            parentRunId: activeRun.id,
+            parentStepKey: stepKey,
+            definitionName: step.workflow,
+            definitionVersion: requireDefinition(args.definitions, step.workflow)
+              .version,
+            input: childInput,
+            currentStepKey: requireDefinition(args.definitions, step.workflow)
+              .startAt,
+          })
+        }
+
+        activeRun = await args.store.openWait({
+          runId: activeRun.id,
+          stepKey,
+          workerId: args.workerId,
+          attemptId: attempt.id,
+          context: activeRun.context,
+          correlationKey: `child:${activeRun.id}:${stepKey}`,
+          payload: {
+            workflowName: step.workflow,
+          },
+          expiresAt: null,
+          output: null,
+        })
+        args.metrics.stepAttempts.inc({
+          workflow: definition.name,
+          step: stepKey,
+          status: "completed",
+        })
+        args.metrics.waitOpens.set(await args.store.countOpenWaits())
+        return activeRun
+      }
+
       if (step.kind !== "task") {
         throw new Error("Encountered an unsupported executable step kind")
+      }
+
+      if (step.transactional) {
+        const outcome = await args.store.executeTransactionalTask({
+          run: activeRun,
+          stepKey,
+          workerId: args.workerId,
+          ...(step.next === undefined ? {} : { nextStepKey: step.next }),
+          ...(step.retry === undefined ? {} : { retryPolicy: step.retry }),
+          ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
+          resolveRetryAvailableAt: ({ attempt, retryPolicy }) =>
+            getRetryAvailableAt({
+              attempt,
+              ...createRetryDelayInput(retryPolicy),
+            }),
+          getErrorTag,
+          asErrorPayload,
+          mergeContext,
+          runTask: step.run,
+        })
+
+        if (outcome.outcome === "lost_lease") {
+          return null
+        }
+
+        activeRun = outcome.run
+
+        if (outcome.outcome === "completed") {
+          args.metrics.stepAttempts.inc({
+            workflow: definition.name,
+            step: stepKey,
+            status: "completed",
+          })
+        } else {
+          args.metrics.stepAttempts.inc({
+            workflow: definition.name,
+            step: stepKey,
+            status: "failed",
+          })
+          if (outcome.outcome === "retry_scheduled") {
+            args.metrics.retries.inc({
+              workflow: definition.name,
+              step: stepKey,
+            })
+          } else {
+            args.metrics.runsFailed.inc({
+              workflow: definition.name,
+              step: stepKey,
+            })
+            observeRunDuration({
+              metrics: args.metrics,
+              run: activeRun,
+              status: "failed",
+            })
+          }
+        }
+
+        return activeRun
       }
 
       const result = await withTimeout(
@@ -427,10 +656,10 @@ const continueRun = async (args: {
           stepKey,
           workerId: args.workerId,
           attemptId: attempt.id,
-          availableAt: getRetryAvailableAt(
-            attempt.attempt,
-            retryPolicy.backoffMs
-          ),
+          availableAt: getRetryAvailableAt({
+            attempt: attempt.attempt,
+            ...createRetryDelayInput(retryPolicy),
+          }),
           error: asErrorPayload(error),
         })
         args.metrics.retries.inc({
@@ -536,6 +765,22 @@ export const createWorkflowEngine = (args: {
               attempt: 0,
               stepKey: wait.stepKey,
               heartbeat: async () => false,
+              db: {
+                query: args.store.queryStepDatabase,
+              },
+              outbox: {
+                enqueue: async (outboxInput) => {
+                  await args.store.enqueueOutbox({
+                    runId: run.id,
+                    topic: outboxInput.topic,
+                    payload: outboxInput.payload,
+                    ...(outboxInput.availableAt === undefined
+                      ? {}
+                      : { availableAt: outboxInput.availableAt }),
+                  })
+                },
+              },
+              transactional: false,
             }),
             input.payload
           )
