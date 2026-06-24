@@ -524,6 +524,59 @@ const createStoreStub = () => {
       })
       return { status: "resumed" as const, run: next }
     },
+    async consumeSignalAndResumeWait(args: {
+      correlationKey: string
+      signalName: string
+      resume: (signalPayload: JsonValue | undefined) => Promise<{
+        nextStepKey: string
+        context: JsonObject
+        output: JsonValue | null
+      }>
+    }) {
+      const wait = waits.get(args.correlationKey)
+      if (!wait) {
+        return { status: "missing" as const, run: null }
+      }
+      const run = runs.get(wait.runId)!
+      if (wait.status !== "open") {
+        return { status: "duplicate" as const, run }
+      }
+      if (run.status !== "waiting" || run.currentStepKey !== wait.stepKey) {
+        return { status: "duplicate" as const, run }
+      }
+      const signal = signals.find(
+        (candidate) =>
+          candidate.runId === run.id &&
+          candidate.signalName === args.signalName &&
+          candidate.consumedAt === null
+      )
+      if (!signal) {
+        return { status: "no_signal" as const, run }
+      }
+      signal.consumedAt = now()
+      signal.updatedAt = now()
+      const resumed = await args.resume(signal.payload ?? undefined)
+      wait.status = "resumed"
+      wait.resumePayload = signal.payload
+      wait.resumeOutput = resumed.output
+      wait.resumedAt = now()
+      const next: WorkflowRunRecord = {
+        ...run,
+        status: "queued",
+        currentStepKey: resumed.nextStepKey,
+        context: resumed.context,
+        error: null,
+        availableAt: now(),
+      }
+      runs.set(run.id, next)
+      appendEvent({
+        runId: run.id,
+        stepKey: wait.stepKey,
+        eventType: "wait.resumed",
+        payload: { nextStepKey: resumed.nextStepKey },
+      })
+      return { status: "resumed" as const, run: next }
+    },
     async scheduleRetry(args: {
       runId: string
       stepKey: string

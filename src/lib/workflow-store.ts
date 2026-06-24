@@ -501,6 +501,82 @@ export const createWorkflowStore = (
       return { status: "resumed" as const, run: resumedRun }
     })
 
+  const consumeSignalAndResumeWait = async (args: {
+    correlationKey: string
+    signalName: string
+    resume: (signalPayload: JsonValue | undefined) => Promise<{
+      nextStepKey: string
+      context: JsonObject
+      output: JsonValue | null
+    }>
+  }): Promise<{
+    status: "resumed" | "no_signal" | "duplicate" | "missing"
+    run: WorkflowRunRecord | null
+  }> =>
+    withTransaction(db, async (client) => {
+      const [waitRow] = await getOpenWaitForUpdateQuery.run(
+        { correlationKey: args.correlationKey },
+        client
+      )
+
+      if (!waitRow) {
+        return { status: "missing" as const, run: null }
+      }
+
+      const wait = mapWait(waitRow)
+      const [runRow] = await getRunByIdForUpdateQuery.run(
+        { runId: wait.runId },
+        client
+      )
+      const run = mapRun(requireRow(runRow, "Failed to load waiting run"))
+
+      if (wait.status !== "open") {
+        return { status: "duplicate" as const, run }
+      }
+
+      if (run.status !== "waiting" || run.currentStepKey !== wait.stepKey) {
+        return { status: "duplicate" as const, run }
+      }
+
+      const [signalRow] = await consumeSignalQuery.run(
+        { runId: run.id, signalName: args.signalName },
+        client
+      )
+
+      if (!signalRow) {
+        return { status: "no_signal" as const, run }
+      }
+
+      const signal = mapSignal(signalRow)
+      const resumed = await args.resume(signal.payload ?? undefined)
+
+      const [updatedRow] = await completeWaitResumeQuery.run(
+        {
+          waitId: wait.id,
+          runId: run.id,
+          stepKey: wait.stepKey,
+          nextStepKey: resumed.nextStepKey,
+          context: resumed.context,
+          resumePayload: signal.payload,
+          output: resumed.output,
+          eventType: "wait.resumed",
+          eventPayload: {
+            nextStepKey: resumed.nextStepKey,
+            resumePayload: signal.payload,
+          },
+        },
+        client
+      )
+
+      if (!updatedRow) {
+        return { status: "duplicate" as const, run }
+      }
+
+      const resumedRun = mapRun(updatedRow)
+      await notifyRunnable()
+      return { status: "resumed" as const, run: resumedRun }
+    })
+
   const countOpenWaits = async () => {
     const [row] = await countOpenWaitsQuery.run(undefined, db)
     return requireRow(row, "Failed to count open waits").waitCount
@@ -1539,6 +1615,7 @@ export const createWorkflowStore = (
     recoverExpiredLeases,
     requestCancelRun,
     resumeWait,
+    consumeSignalAndResumeWait,
     retryRun,
     scheduleRetry,
     scheduleSleep,

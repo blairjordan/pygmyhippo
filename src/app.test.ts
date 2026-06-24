@@ -153,6 +153,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async resumeWait() {
     return { status: "missing" as const, run: null }
   },
+  async consumeSignalAndResumeWait() {
+    return { status: "missing" as const, run: null }
+  },
   async retryRun() {
     return createRunRecord({
       status: "queued",

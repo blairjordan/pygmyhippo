@@ -407,26 +407,24 @@ const continueRun = async (args: {
             output: null,
           })
 
-          const bufferedSignal = await consumeSignal()
-
-          if (!bufferedSignal) {
-            args.metrics.waitOpens.set(await args.store.countOpenWaits())
-            return activeRun
-          }
-
-          const resumed = await args.store.resumeWait({
+          const resumed = await args.store.consumeSignalAndResumeWait({
             correlationKey: `signal:${activeRun.id}:${step.signal}`,
-            payload: bufferedSignal.payload ?? undefined,
-            resume: async (run) =>
+            signalName: step.signal,
+            resume: async (signalPayload) =>
               resumeSignal({
-                run,
-                payload: bufferedSignal.payload ?? undefined,
+                run: activeRun,
+                payload: signalPayload,
                 attempt: 0,
               }),
           })
 
           args.metrics.waitOpens.set(await args.store.countOpenWaits())
-          return resumed.run
+
+          if (resumed.status === "resumed" && resumed.run) {
+            return resumed.run
+          }
+
+          return activeRun
         }
 
         const result = await resumeSignal({
