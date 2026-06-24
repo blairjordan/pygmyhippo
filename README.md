@@ -59,6 +59,7 @@ Required environment:
 
 Optional environment:
 
+- `HIPPO_ENV`
 - `HIPPO_HOST`
 - `HIPPO_PORT`
 - `HIPPO_WORKER_ID`
@@ -82,6 +83,12 @@ npm run hippo:dev
 
 This starts local Postgres via `docker compose`, waits for the database port,
 runs migrations, then launches the API and worker with `tsx watch`.
+
+Environment modes:
+
+- `HIPPO_ENV=dev` keeps local defaults permissive.
+- `HIPPO_ENV=staging` and `HIPPO_ENV=prod` require both `HIPPO_API_TOKEN`
+  and `HIPPO_CALLBACK_SECRET`.
 
 If you prefer the steps manually:
 

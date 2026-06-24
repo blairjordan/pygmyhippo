@@ -173,6 +173,7 @@ Tier 5 — DX parity with Trigger.dev (this is the actual pitch)
     - Operator actions: cancel, retry, rewind, fork (when Time-travel ships)
   No auth in dev (loopback only). Token auth in prod (reuse HIPPO_API_TOKEN).
 - [ ] Environment story: local / staging / prod parity
+  Current state: `HIPPO_ENV=dev|staging|prod` is parsed centrally and non-dev now enforces `HIPPO_API_TOKEN` plus `HIPPO_CALLBACK_SECRET` at startup.
   Same code, env vars switch behaviour. Document the matrix:
     - DATABASE_URL                  → which Postgres
     - HIPPO_ENV=dev|staging|prod    → log level, auth strictness, dashboard auth
