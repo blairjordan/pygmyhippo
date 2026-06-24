@@ -452,4 +452,98 @@ describe("app routes", () => {
 
     await securedApp.close()
   })
+
+  it("forwards an idempotency key when creating a run", async () => {
+    let capturedIdempotencyKey: string | undefined
+    const store = {
+      ...createStoreStub(),
+      async startRun(args: {
+        parentRunId?: string | null
+        parentStepKey?: string | null
+        definitionName: string
+        definitionVersion: number
+        input: JsonObject
+        currentStepKey: string
+        idempotencyKey?: string | null
+      }) {
+        capturedIdempotencyKey =
+          args.idempotencyKey === null ? undefined : args.idempotencyKey
+
+        return createRunRecord({
+          definitionName: args.definitionName,
+          definitionVersion: args.definitionVersion,
+          currentStepKey: args.currentStepKey,
+          input: args.input,
+        })
+      },
+    }
+    const idempotentApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store,
+      }),
+      metrics: createMetrics(),
+      store,
+    })
+
+    const response = await idempotentApp.inject({
+      method: "POST",
+      url: "/v1/workflows/demo-delivery/runs",
+      headers: {
+        "idempotency-key": "customer-start-123",
+      },
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(capturedIdempotencyKey).toBe("customer-start-123")
+
+    await idempotentApp.close()
+  })
+
+  it("returns projected run context fields", async () => {
+    const contextStore = {
+      ...createStoreStub(),
+      async getRun() {
+        return createRunRecord({
+          context: {
+            delivery: {
+              status: "waiting",
+              provider: "email",
+            },
+            customerId: "cus_123",
+          },
+        })
+      },
+    }
+    const contextApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store: contextStore,
+      }),
+      metrics: createMetrics(),
+      store: contextStore,
+    })
+
+    const response = await contextApp.inject({
+      method: "GET",
+      url: "/v1/runs/11111111-1111-4111-8111-111111111111/context?keys=delivery.status,customerId,missing",
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      runId: "run-1",
+      workflowName: demoWorkflow.name,
+      context: {
+        "delivery.status": "waiting",
+        customerId: "cus_123",
+      },
+    })
+
+    await contextApp.close()
+  })
 })

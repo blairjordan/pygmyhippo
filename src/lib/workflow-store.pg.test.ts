@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -63,18 +63,27 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
       connectionString: databaseUrl.toString(),
     })
 
-    const migrationPath = path.resolve(
+    const migrationsDir = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      "../../db/migrations/20260601010000_initial.sql"
+      "../../db/migrations"
     )
-    const migrationSql = await readFile(migrationPath, "utf8")
-    const schemaSql = migrationSql.split("-- migrate:down")[0]?.replace("-- migrate:up", "")
+    const migrationFiles = (await readdir(migrationsDir)).sort()
 
-    if (!schemaSql) {
-      throw new Error("Failed to load migration SQL")
+    for (const migrationFile of migrationFiles) {
+      const migrationSql = await readFile(
+        path.join(migrationsDir, migrationFile),
+        "utf8"
+      )
+      const schemaSql = migrationSql
+        .split("-- migrate:down")[0]
+        ?.replace("-- migrate:up", "")
+
+      if (!schemaSql) {
+        throw new Error(`Failed to load migration SQL from ${migrationFile}`)
+      }
+
+      await pool.query(schemaSql)
     }
-
-    await pool.query(schemaSql)
     store = createWorkflowStore(pool)
   })
 
@@ -297,5 +306,41 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
     expect(completedParent?.context.childResult).toMatchObject({
       childValue: "ready",
     })
+  })
+
+  it("deduplicates run creation by workflow and idempotency key", async () => {
+    const workflow = defineWorkflow({
+      name: "idempotent-start",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep(),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const first = await engine.startRun({
+      workflowName: workflow.name,
+      payload: { orderId: "123" },
+      idempotencyKey: "start-123",
+    })
+    const second = await engine.startRun({
+      workflowName: workflow.name,
+      payload: { orderId: "456" },
+      idempotencyKey: "start-123",
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(second.input).toEqual({ orderId: "123" })
+
+    const events = await store.getRunEvents(first.id)
+
+    expect(
+      events.filter((event) => event.eventType === "run.started")
+    ).toHaveLength(1)
   })
 })

@@ -48,6 +48,10 @@ const runStreamQuerySchema = z.object({
   afterEventId: z.coerce.number().int().nonnegative().default(0),
 })
 
+const runContextQuerySchema = z.object({
+  keys: z.string().min(1).optional(),
+})
+
 const runIdParamsSchema = z.object({
   runId: z.uuid(),
 })
@@ -95,6 +99,37 @@ const formatDateTime = (value: Date | null) =>
 
 const formatJson = (value: JsonValue) =>
   escapeHtml(JSON.stringify(value, null, 2) ?? "null")
+
+const projectContextValue = (
+  source: JsonObject,
+  dottedKey: string
+): JsonValue | undefined => {
+  const parts = dottedKey.split(".").filter((part) => part.length > 0)
+  let current: JsonValue | undefined = source
+
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined
+    }
+
+    current = current[part]
+  }
+
+  return current
+}
+
+const projectRunContext = (source: JsonObject, keys: string[]) => {
+  if (keys.length === 0) {
+    return source
+  }
+
+  return Object.fromEntries(
+    keys.flatMap((key) => {
+      const value = projectContextValue(source, key)
+      return value === undefined ? [] : [[key, value]]
+    })
+  )
+}
 
 const statusToneByRun = {
   queued: "tone-queued",
@@ -484,6 +519,14 @@ const requireApiAuth = (
   }
 }
 
+const getIdempotencyKey = (request: FastifyRequest) => {
+  const header =
+    request.headers["idempotency-key"] ??
+    request.headers["x-idempotency-key"]
+
+  return typeof header === "string" && header.length > 0 ? header : undefined
+}
+
 const requireCallbackAuth = (
   app: FastifyInstance,
   request: FastifyRequest,
@@ -612,6 +655,7 @@ export const createWorkflowRoutes = (args: {
 
     const params = workflowNameParamsSchema.parse(request.params)
     const payload = startRunBodySchema.parse(request.body ?? {})
+    const idempotencyKey = getIdempotencyKey(request)
 
     if (!args.engine.hasWorkflow(params.workflowName)) {
       throw app.httpErrors.notFound(
@@ -622,6 +666,7 @@ export const createWorkflowRoutes = (args: {
     const run = await args.engine.startRun({
       workflowName: params.workflowName,
       payload,
+      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     })
 
     reply.code(202)
@@ -851,6 +896,25 @@ export const createWorkflowRoutes = (args: {
       run,
       attempts,
       events,
+    }
+  })
+
+  app.get("/v1/runs/:runId/context", async (request) => {
+    requireApiAuth(app, request, args.auth)
+
+    const params = runIdParamsSchema.parse(request.params)
+    const query = runContextQuerySchema.parse(request.query)
+    const run = await getExistingRun(app, args.store, params.runId)
+    const keys =
+      query.keys
+        ?.split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0) ?? []
+
+    return {
+      runId: run.id,
+      workflowName: run.definitionName,
+      context: projectRunContext(run.context, keys),
     }
   })
 

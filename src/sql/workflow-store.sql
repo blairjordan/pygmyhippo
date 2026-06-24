@@ -1,21 +1,32 @@
 /* @name InsertRun */
 INSERT INTO workflow_runs (
+  parent_run_id,
+  parent_step_key,
   definition_name,
   definition_version,
   status,
   current_step_key,
+  idempotency_key,
   input,
   context
 ) VALUES (
+  :parentRunId,
+  :parentStepKey,
   :definitionName,
   :definitionVersion,
   'queued',
   :currentStepKey,
+  :idempotencyKey,
   :input,
   '{}'::jsonb
 )
+ON CONFLICT (definition_name, idempotency_key)
+DO UPDATE SET
+  idempotency_key = workflow_runs.idempotency_key
 RETURNING
   id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
   definition_name AS "definitionName",
   definition_version AS "definitionVersion",
   status,

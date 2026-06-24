@@ -40,14 +40,14 @@ Tier 1 — table stakes for DE
   Durable signal table + route + engine consume-or-open-wait branch + atomic consumeSignalAndResumeWait closing the post-openWait race (commit 31f4f83).
   Optional follow-up: client-supplied dedup_key with unique (run_id, signal_name, dedup_key) for idempotent signal posts.
 - [~] Queries: read live state without mutation
-  Current state: run detail, attempts, events, active/failed/stuck operator queries exist.
-  Open: safe projection of running run context for client queries (single-run context endpoint, projection helpers).
+  Current state: run detail, attempts, events, active/failed/stuck operator queries exist, plus single-run context projection endpoint.
+  Open: richer query helpers and workflow-owned projection contracts for clients that should not consume raw context keys.
 - [~] Retry policy per step
   Current state: max attempts, backoff, and non-retryable error tags are implemented.
   Open: exponential backoff + jitter + max delay cap, richer retry classification / policy presets (covered by Wave 0).
 - [~] Idempotency keys / activity IDs
-  Current state: stable step-scoped idempotency keys exist in execution context.
-  Open: client-supplied idempotency key on POST /runs to dedup duplicate starts, explicit external activity/outbox helper for exactly-once side effects.
+  Current state: stable step-scoped idempotency keys exist in execution context, and client-supplied `Idempotency-Key` headers on POST /runs dedup duplicate starts durably in Postgres.
+  Open: explicit external activity/outbox helper for exactly-once side effects.
 - [x] Durable timers / sleep
 - [x] Wait expiry: timeoutMs required on wait/signal steps, recovery expires overdue waits and fails the run
 - [x] Cron schedules

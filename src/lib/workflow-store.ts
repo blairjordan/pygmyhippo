@@ -237,8 +237,159 @@ export const createWorkflowStore = (
     definitionVersion: number
     input: JsonObject
     currentStepKey: string
+    idempotencyKey?: string | null
   }) =>
     withTransaction(db, async (client) => {
+      if (args.idempotencyKey) {
+        const [idempotentRow] = await queryRows<
+          IRunRow & { inserted: boolean }
+        >(
+          client,
+          `
+            WITH existing_run AS (
+              SELECT
+                id,
+                parent_run_id AS "parentRunId",
+                parent_step_key AS "parentStepKey",
+                definition_name AS "definitionName",
+                definition_version AS "definitionVersion",
+                status,
+                current_step_key AS "currentStepKey",
+                input,
+                context,
+                result,
+                error,
+                lease_owner AS "leaseOwner",
+                lease_expires_at AS "leaseExpiresAt",
+                cancel_requested_at AS "cancelRequestedAt",
+                cancel_mode AS "cancelMode",
+                available_at AS "availableAt",
+                created_at AS "createdAt",
+                updated_at AS "updatedAt",
+                completed_at AS "completedAt",
+                FALSE AS inserted
+              FROM workflow_runs
+              WHERE definition_name = $1
+                AND idempotency_key = $2
+            ), inserted_run AS (
+              INSERT INTO workflow_runs (
+                parent_run_id,
+                parent_step_key,
+                definition_name,
+                definition_version,
+                status,
+                current_step_key,
+                idempotency_key,
+                input,
+                context
+              )
+              SELECT
+                $3,
+                $4,
+                $1,
+                $5,
+                'queued'::workflow_run_status,
+                $6,
+                $2,
+                $7,
+                '{}'::jsonb
+              WHERE NOT EXISTS (SELECT 1 FROM existing_run)
+              ON CONFLICT (definition_name, idempotency_key) DO NOTHING
+              RETURNING
+                id,
+                parent_run_id AS "parentRunId",
+                parent_step_key AS "parentStepKey",
+                definition_name AS "definitionName",
+                definition_version AS "definitionVersion",
+                status,
+                current_step_key AS "currentStepKey",
+                input,
+                context,
+                result,
+                error,
+                lease_owner AS "leaseOwner",
+                lease_expires_at AS "leaseExpiresAt",
+                cancel_requested_at AS "cancelRequestedAt",
+                cancel_mode AS "cancelMode",
+                available_at AS "availableAt",
+                created_at AS "createdAt",
+                updated_at AS "updatedAt",
+                completed_at AS "completedAt",
+                TRUE AS inserted
+            )
+            SELECT * FROM inserted_run
+            UNION ALL
+            SELECT * FROM existing_run
+            LIMIT 1
+          `,
+          [
+            args.definitionName,
+            args.idempotencyKey,
+            args.parentRunId ?? null,
+            args.parentStepKey ?? null,
+            args.definitionVersion,
+            args.currentStepKey,
+            args.input,
+          ]
+        )
+
+        if (idempotentRow) {
+          const run = mapRun(idempotentRow)
+
+          if (idempotentRow.inserted) {
+            await insertEventQuery.run(
+              {
+                runId: run.id,
+                stepKey: run.currentStepKey,
+                eventType: "run.started",
+                payload: {},
+              },
+              client
+            )
+
+            await notifyRunnable()
+            await notifyRunEvent(run.id)
+          }
+
+          return run
+        }
+
+        const [existingRow] = await queryRows<IRunRow>(
+          client,
+          `
+            SELECT
+              id,
+              parent_run_id AS "parentRunId",
+              parent_step_key AS "parentStepKey",
+              definition_name AS "definitionName",
+              definition_version AS "definitionVersion",
+              status,
+              current_step_key AS "currentStepKey",
+              input,
+              context,
+              result,
+              error,
+              lease_owner AS "leaseOwner",
+              lease_expires_at AS "leaseExpiresAt",
+              cancel_requested_at AS "cancelRequestedAt",
+              cancel_mode AS "cancelMode",
+              available_at AS "availableAt",
+              created_at AS "createdAt",
+              updated_at AS "updatedAt",
+              completed_at AS "completedAt"
+            FROM workflow_runs
+            WHERE definition_name = $1
+              AND idempotency_key = $2
+            LIMIT 1
+          `,
+          [args.definitionName, args.idempotencyKey]
+        )
+
+        if (existingRow) {
+          return mapRun(existingRow)
+        }
+      }
+
       const [runRow] = await insertRunQuery.run(args, client)
       const run = mapRun(requireRow(runRow, "Failed to insert workflow run"))
 

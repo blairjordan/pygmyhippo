@@ -81,6 +81,7 @@ export const insertRunQuery = sql<{
     definitionName: string
     definitionVersion: number
     currentStepKey: string
+    idempotencyKey?: string | null
     input: Json
   }
   result: IRunRow
@@ -92,6 +93,7 @@ export const insertRunQuery = sql<{
     definition_version,
     status,
     current_step_key,
+    idempotency_key,
     input,
     context
   ) VALUES (
@@ -101,9 +103,13 @@ export const insertRunQuery = sql<{
     $definitionVersion,
     'queued',
     $currentStepKey,
+    $idempotencyKey,
     $input,
     '{}'::jsonb
   )
+  ON CONFLICT (definition_name, idempotency_key)
+  DO UPDATE SET
+    idempotency_key = workflow_runs.idempotency_key
   RETURNING
     id,
     parent_run_id AS "parentRunId",

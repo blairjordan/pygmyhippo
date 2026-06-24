@@ -734,6 +734,7 @@ export const createWorkflowEngine = (args: {
   const startRun = async (input: {
     workflowName: string
     payload: JsonObject
+    idempotencyKey?: string
   }) => {
     const definition = requireDefinition(definitions, input.workflowName)
 
@@ -742,6 +743,9 @@ export const createWorkflowEngine = (args: {
       definitionVersion: definition.version,
       input: input.payload,
       currentStepKey: definition.startAt,
+      ...(input.idempotencyKey === undefined
+        ? {}
+        : { idempotencyKey: input.idempotencyKey }),
     })
 
     args.metrics.runsStarted.inc({ workflow: definition.name })
