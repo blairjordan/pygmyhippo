@@ -84,34 +84,46 @@ const sleep = (delayMs: number) =>
     setTimeout(resolve, delayMs)
   })
 
+const tryConnect = (args: { host: string; port: number; timeoutMs: number }) =>
+  new Promise<boolean>((resolve) => {
+    const socket = new net.Socket()
+    let settled = false
+
+    const finish = (value: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      socket.destroy()
+      resolve(value)
+    }
+
+    socket.setTimeout(args.timeoutMs)
+    socket.once("connect", () => finish(true))
+    socket.once("timeout", () => finish(false))
+    socket.once("error", () => finish(false))
+    socket.connect(args.port, args.host)
+  })
+
 export const waitForPort = async (args: {
   host: string
   port: number
   timeoutMs: number
   retryDelayMs: number
+  tryConnect?: (args: {
+    host: string
+    port: number
+    timeoutMs: number
+  }) => Promise<boolean>
 }) => {
   const deadline = Date.now() + args.timeoutMs
 
   while (Date.now() < deadline) {
-    const connected = await new Promise<boolean>((resolve) => {
-      const socket = new net.Socket()
-      let settled = false
-
-      const finish = (value: boolean) => {
-        if (settled) {
-          return
-        }
-
-        settled = true
-        socket.destroy()
-        resolve(value)
-      }
-
-      socket.setTimeout(Math.min(args.retryDelayMs, 1_000))
-      socket.once("connect", () => finish(true))
-      socket.once("timeout", () => finish(false))
-      socket.once("error", () => finish(false))
-      socket.connect(args.port, args.host)
+    const connected = await (args.tryConnect ?? tryConnect)({
+      host: args.host,
+      port: args.port,
+      timeoutMs: Math.min(args.retryDelayMs, 1_000),
     })
 
     if (connected) {

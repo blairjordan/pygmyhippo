@@ -1,6 +1,4 @@
-import net from "node:net"
-
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   createHippoDevPlan,
@@ -64,35 +62,20 @@ describe("dev cli helpers", () => {
   })
 
   it("waits for a TCP port to become available", async () => {
-    const server = net.createServer()
-
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject)
-      server.listen(0, "127.0.0.1", () => resolve())
-    })
-
-    const address = server.address()
-
-    if (!address || typeof address === "string") {
-      throw new Error("Expected TCP server address")
-    }
+    const tryConnect = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
 
     await waitForPort({
       host: "127.0.0.1",
-      port: address.port,
+      port: 55432,
       timeoutMs: 200,
       retryDelayMs: 25,
+      tryConnect: async () => tryConnect(),
     })
 
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error)
-          return
-        }
-
-        resolve()
-      })
-    })
+    expect(tryConnect).toHaveBeenCalledTimes(3)
   })
 })

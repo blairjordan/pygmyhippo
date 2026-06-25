@@ -28,6 +28,12 @@ export type HippoTracer = {
   ) => Promise<T>
 }
 
+const createSpanOptions = (attributes?: TraceAttributes) => {
+  const mappedAttributes = toAttributes(attributes)
+
+  return mappedAttributes === undefined ? {} : { attributes: mappedAttributes }
+}
+
 const toAttributes = (attributes: TraceAttributes | undefined): Attributes | undefined => {
   if (!attributes) {
     return undefined
@@ -55,9 +61,7 @@ export const createHippoTracer = (args?: {
     const parentContext = contextStorage.getStore() ?? context.active()
     const span = otelTracer.startSpan(
       input.name,
-      input.attributes === undefined
-        ? {}
-        : { attributes: toAttributes(input.attributes) ?? {} },
+      createSpanOptions(input.attributes),
       parentContext
     )
     const spanContext = trace.setSpan(parentContext, span)
