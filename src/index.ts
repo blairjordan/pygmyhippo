@@ -10,6 +10,7 @@ import { createWorkflowNotifier } from "./lib/notifier.js"
 import { startOutboxLoop } from "./lib/outbox.js"
 import { startRecoveryLoop } from "./lib/recovery.js"
 import { startScheduleLoop } from "./lib/scheduler.js"
+import { createHippoTracer } from "./lib/tracing.js"
 import { startWorkerLoop } from "./lib/worker.js"
 import { createWorkflowEngine } from "./lib/workflow-engine.js"
 import { createWorkflowStore } from "./lib/workflow-store.js"
@@ -25,15 +26,18 @@ const main = async () => {
   const config = getConfig()
   const sql = createDatabase(config)
   const metrics = createMetrics()
+  const tracer = createHippoTracer()
   const notifier = createWorkflowNotifier(config)
   const store = createWorkflowStore(sql, {
     notifyRunnable: () => notifier.notifyRunnable(),
     notifyRunEvent: (runId) => notifier.notifyRunEvent(runId),
+    tracer,
   })
   const engine = createWorkflowEngine({
     definitions: workflows,
     metrics,
     store,
+    tracer,
   })
   const auth = {
     verifyApiRequest: createApiAuthenticator(config.HIPPO_API_TOKEN),
@@ -48,6 +52,7 @@ const main = async () => {
     listenForNotifications: notifier.listen,
     metrics,
     store,
+    tracer,
   })
 
   const stopWorker = startWorkerLoop({
@@ -60,6 +65,7 @@ const main = async () => {
     onError: (error) => {
       app.log.error(error)
     },
+    tracer,
   })
   const stopRecovery = startRecoveryLoop({
     intervalMs: config.HIPPO_RECOVERY_INTERVAL_MS,
@@ -69,6 +75,7 @@ const main = async () => {
       app.log.error(error)
     },
     store,
+    tracer,
   })
   const stopScheduler = startScheduleLoop({
     engine,
@@ -78,6 +85,7 @@ const main = async () => {
       app.log.error(error)
     },
     store,
+    tracer,
   })
   const stopOutbox = startOutboxLoop({
     handlers: {},
@@ -87,6 +95,7 @@ const main = async () => {
       app.log.error({ error, record })
     },
     store,
+    tracer,
   })
 
   const shutdown = async () => {

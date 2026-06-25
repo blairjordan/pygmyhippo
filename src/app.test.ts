@@ -7,6 +7,8 @@ import {
   signCallbackBody,
 } from "./lib/auth.js"
 import { createMetrics } from "./lib/metrics.js"
+import { createHippoTracer } from "./lib/tracing.js"
+import { createRecordingTracer } from "./lib/tracing.test-helpers.js"
 import { createWorkflowEngine } from "./lib/workflow-engine.js"
 import { demoWorkflow } from "./workflows/demo.js"
 import type { JsonObject } from "./types/json.js"
@@ -544,6 +546,41 @@ describe("app routes", () => {
     expect(capturedIdempotencyKey).toBe("customer-start-123")
 
     await idempotentApp.close()
+  })
+
+  it("emits nested spans from route to engine to store when starting a run", async () => {
+    const store = createStoreStub()
+    const recording = createRecordingTracer()
+    const tracer = createHippoTracer({
+      tracer: recording.tracer,
+    })
+    const tracedApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store,
+        tracer,
+      }),
+      metrics: createMetrics(),
+      store,
+      tracer,
+    })
+
+    const response = await tracedApp.inject({
+      method: "POST",
+      url: "/v1/workflows/demo-delivery/runs",
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(recording.spans.map((span) => span.name)).toEqual([
+      "hippo.http.start_run",
+      "hippo.workflow.start_run",
+    ])
+    expect(recording.spans[1]?.parentName).toBe("hippo.http.start_run")
+
+    await tracedApp.close()
   })
 
   it("returns projected run context fields", async () => {

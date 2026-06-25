@@ -11,6 +11,10 @@ import type { HippoMetrics } from "../lib/metrics.js"
 import type { WorkflowNotification } from "../lib/notifier.js"
 import { runRecoveryPass } from "../lib/recovery.js"
 import { computeNextScheduleFireAt } from "../lib/scheduler.js"
+import {
+  createTraceAttributes,
+  type HippoTracer,
+} from "../lib/tracing.js"
 import type { WorkflowEngine } from "../lib/workflow-engine.js"
 import type { WorkflowStore } from "../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
@@ -1135,6 +1139,15 @@ const compensateRunTree = async (args: {
   return args.engine.runCompensation(args.runId)
 }
 
+const traceRequest = <T>(
+  tracer: HippoTracer,
+  input: {
+    name: string
+    attributes?: Record<string, string | number | boolean>
+  },
+  run: () => Promise<T>
+) => tracer.withSpan(input, run)
+
 export const createWorkflowRoutes = (args: {
   auth: HippoAuth
   engine: WorkflowEngine
@@ -1143,6 +1156,7 @@ export const createWorkflowRoutes = (args: {
   ) => Promise<() => Promise<void>>
   metrics: HippoMetrics
   store: WorkflowStore
+  tracer: HippoTracer
 }): FastifyPluginAsync => async (app) => {
   app.get("/dashboard", async (request, reply) => {
     requireApiAuth(app, request, args.auth)
@@ -1219,32 +1233,47 @@ export const createWorkflowRoutes = (args: {
   app.post("/v1/workflows/:workflowName/runs", async (request, reply) => {
     requireApiAuth(app, request, args.auth)
 
-    const params = workflowNameParamsSchema.parse(request.params)
-    const body = startRunBodySchema.parse(request.body ?? {})
-    const idempotencyKey = getIdempotencyKey(request)
+    return traceRequest(
+      args.tracer,
+      {
+        name: "hippo.http.start_run",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "http.start_run",
+          }),
+          "http.method": request.method,
+          "http.route": "/v1/workflows/:workflowName/runs",
+        },
+      },
+      async () => {
+        const params = workflowNameParamsSchema.parse(request.params)
+        const body = startRunBodySchema.parse(request.body ?? {})
+        const idempotencyKey = getIdempotencyKey(request)
 
-    if (!args.engine.hasWorkflow(params.workflowName)) {
-      throw app.httpErrors.notFound(
-        `Workflow "${params.workflowName}" is not registered`
-      )
-    }
+        if (!args.engine.hasWorkflow(params.workflowName)) {
+          throw app.httpErrors.notFound(
+            `Workflow "${params.workflowName}" is not registered`
+          )
+        }
 
-    const run = await args.engine.startRun({
-      workflowName: params.workflowName,
-      payload: body.payload,
-      taskQueue: body.taskQueue,
-      priority: body.priority,
-      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
-    })
+        const run = await args.engine.startRun({
+          workflowName: params.workflowName,
+          payload: body.payload,
+          taskQueue: body.taskQueue,
+          priority: body.priority,
+          ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+        })
 
-    reply.code(202)
-    return {
-      runId: run.id,
-      status: run.status,
-      currentStepKey: run.currentStepKey,
-      taskQueue: run.taskQueue,
-      priority: run.priority,
-    }
+        reply.code(202)
+        return {
+          runId: run.id,
+          status: run.status,
+          currentStepKey: run.currentStepKey,
+          taskQueue: run.taskQueue,
+          priority: run.priority,
+        }
+      }
+    )
   })
 
   app.get("/v1/operators/runs/active", async (request) => {
@@ -1277,52 +1306,67 @@ export const createWorkflowRoutes = (args: {
   app.post("/v1/operators/runs/:runId/cancel", async (request) => {
     requireApiAuth(app, request, args.auth)
 
-    const params = runIdParamsSchema.parse(request.params)
-    const body = cancelRunBodySchema.parse(request.body ?? {})
-    const existingRun = await getExistingRun(app, args.store, params.runId)
+    return traceRequest(
+      args.tracer,
+      {
+        name: "hippo.http.cancel_run",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "http.cancel_run",
+          }),
+          "http.method": request.method,
+          "http.route": "/v1/operators/runs/:runId/cancel",
+        },
+      },
+      async () => {
+        const params = runIdParamsSchema.parse(request.params)
+        const body = cancelRunBodySchema.parse(request.body ?? {})
+        const existingRun = await getExistingRun(app, args.store, params.runId)
 
-    if (
-      existingRun.status === "completed" ||
-      existingRun.status === "canceled"
-    ) {
-      throw app.httpErrors.conflict(
-        `Run "${params.runId}" cannot be canceled from status "${existingRun.status}"`
-      )
-    }
+        if (
+          existingRun.status === "completed" ||
+          existingRun.status === "canceled"
+        ) {
+          throw app.httpErrors.conflict(
+            `Run "${params.runId}" cannot be canceled from status "${existingRun.status}"`
+          )
+        }
 
-    const run = await args.store.requestCancelRun({
-      runId: params.runId,
-      mode: body.mode,
-      ...(body.reason === undefined ? {} : { reason: body.reason }),
-    })
+        const run = await args.store.requestCancelRun({
+          runId: params.runId,
+          mode: body.mode,
+          ...(body.reason === undefined ? {} : { reason: body.reason }),
+        })
 
-    if (!run) {
-      throw app.httpErrors.conflict(
-        `Run "${params.runId}" could not be canceled`
-      )
-    }
+        if (!run) {
+          throw app.httpErrors.conflict(
+            `Run "${params.runId}" could not be canceled`
+          )
+        }
 
-    await propagateCancellation({
-      mode: body.mode,
-      reason: body.reason,
-      runId: run.id,
-      store: args.store,
-    })
+        await propagateCancellation({
+          mode: body.mode,
+          reason: body.reason,
+          runId: run.id,
+          store: args.store,
+        })
 
-    const compensatedRun =
-      body.mode === "hard"
-        ? await compensateRunTree({
-        engine: args.engine,
-        runId: run.id,
-        store: args.store,
-          })
-        : null
+        const compensatedRun =
+          body.mode === "hard"
+            ? await compensateRunTree({
+                engine: args.engine,
+                runId: run.id,
+                store: args.store,
+              })
+            : null
 
-    return {
-      runId: run.id,
-      status: compensatedRun?.status ?? run.status,
-      currentStepKey: compensatedRun?.currentStepKey ?? run.currentStepKey,
-    }
+        return {
+          runId: run.id,
+          status: compensatedRun?.status ?? run.status,
+          currentStepKey: compensatedRun?.currentStepKey ?? run.currentStepKey,
+        }
+      }
+    )
   })
 
   app.post("/v1/operators/runs/:runId/terminate", async (request) => {

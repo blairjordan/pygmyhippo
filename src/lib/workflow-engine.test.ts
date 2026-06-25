@@ -10,6 +10,8 @@ import {
   waitStep,
 } from "./workflow-definition.js"
 import { createMetrics } from "./metrics.js"
+import { createHippoTracer } from "./tracing.js"
+import { createRecordingTracer } from "./tracing.test-helpers.js"
 import { createWorkflowEngine } from "./workflow-engine.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
@@ -865,6 +867,57 @@ describe("workflow engine", () => {
     const completed = await store.getRun(run.id)
 
     expect(completed?.status).toBe("completed")
+  })
+
+  it("emits nested spans while claiming and executing a step", async () => {
+    const workflow = defineWorkflow({
+      name: "traced-workflow",
+      version: 1,
+      startAt: "work",
+      steps: {
+        work: taskStep({
+          kind: "task",
+          next: "done",
+          run: () => ({
+            patch: {
+              ok: true,
+            },
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const recording = createRecordingTracer()
+    const tracer = createHippoTracer({
+      tracer: recording.tracer,
+    })
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+      tracer,
+    })
+
+    await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+    recording.spans.length = 0
+
+    await engine.tick("test-worker", 5_000)
+
+    const tickSpan = recording.spans.find((span) => span.name === "hippo.workflow.tick")
+    const stepSpan = recording.spans.find(
+      (span) => span.name === "hippo.workflow.step.execute"
+    )
+    const taskSpan = recording.spans.find(
+      (span) => span.name === "hippo.workflow.step.task.run"
+    )
+
+    expect(tickSpan).toBeDefined()
+    expect(stepSpan?.parentName).toBe("hippo.workflow.tick")
+    expect(taskSpan?.parentName).toBe("hippo.workflow.step.execute")
   })
 
   it("continues a run as new from a task step", async () => {

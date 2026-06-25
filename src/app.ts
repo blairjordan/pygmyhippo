@@ -4,6 +4,7 @@ import sensible from "@fastify/sensible"
 
 import type { HippoMetrics } from "./lib/metrics.js"
 import type { WorkflowNotification } from "./lib/notifier.js"
+import { createHippoTracer, type HippoTracer } from "./lib/tracing.js"
 import type { WorkflowEngine } from "./lib/workflow-engine.js"
 import type { WorkflowStore } from "./lib/workflow-store.js"
 import { createHealthRoutes } from "./routes/health.js"
@@ -18,10 +19,12 @@ export const createApp = (args: {
   ) => Promise<() => Promise<void>>
   metrics: HippoMetrics
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
   const app = Fastify({
     logger: true,
   })
+  const tracer = args.tracer ?? createHippoTracer()
 
   void app.register(sensible)
   void app.register(createHealthRoutes(args.store.ping))
@@ -32,6 +35,7 @@ export const createApp = (args: {
       engine: args.engine,
       metrics: args.metrics,
       store: args.store,
+      tracer,
       ...(args.listenForNotifications === undefined
         ? {}
         : { listenForNotifications: args.listenForNotifications }),

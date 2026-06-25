@@ -1,39 +1,54 @@
 import type { HippoMetrics } from "./metrics.js"
+import { createHippoTracer, type HippoTracer } from "./tracing.js"
 import type { WorkflowStore } from "./workflow-store.js"
 
 export const runRecoveryPass = async (args: {
   metrics: HippoMetrics
   store: WorkflowStore
   limit: number
+  tracer?: HippoTracer
 }) => {
-  const reclaimed = await args.store.recoverExpiredLeases({
-    limit: args.limit,
-  })
+  const tracer = args.tracer ?? createHippoTracer()
 
-  if (reclaimed > 0) {
-    args.metrics.leaseReclaims.inc(reclaimed)
-    args.metrics.recoveryActions.inc(
-      {
-        action: "requeue_expired_lease",
+  return tracer.withSpan(
+    {
+      name: "hippo.recovery.pass",
+      attributes: {
+        "hippo.operation": "recovery.pass",
+        "workflow.recovery.limit": args.limit,
       },
-      reclaimed
-    )
-  }
+    },
+    async () => {
+      const reclaimed = await args.store.recoverExpiredLeases({
+        limit: args.limit,
+      })
 
-  const expiredWaits = await args.store.expireOpenWaits({
-    limit: args.limit,
-  })
+      if (reclaimed > 0) {
+        args.metrics.leaseReclaims.inc(reclaimed)
+        args.metrics.recoveryActions.inc(
+          {
+            action: "requeue_expired_lease",
+          },
+          reclaimed
+        )
+      }
 
-  if (expiredWaits > 0) {
-    args.metrics.recoveryActions.inc(
-      {
-        action: "expire_wait",
-      },
-      expiredWaits
-    )
-  }
+      const expiredWaits = await args.store.expireOpenWaits({
+        limit: args.limit,
+      })
 
-  return reclaimed + expiredWaits
+      if (expiredWaits > 0) {
+        args.metrics.recoveryActions.inc(
+          {
+            action: "expire_wait",
+          },
+          expiredWaits
+        )
+      }
+
+      return reclaimed + expiredWaits
+    }
+  )
 }
 
 export const startRecoveryLoop = (args: {
@@ -42,7 +57,9 @@ export const startRecoveryLoop = (args: {
   metrics: HippoMetrics
   onError?: (error: unknown) => void
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
+  const tracer = args.tracer ?? createHippoTracer()
   let active = true
   let inFlight = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -68,11 +85,22 @@ export const startRecoveryLoop = (args: {
     inFlight = true
     inFlightPromise = (async () => {
       try {
-        await runRecoveryPass({
+        await tracer.withSpan(
+          {
+            name: "hippo.recovery.tick",
+            attributes: {
+              "hippo.operation": "recovery.tick",
+              "workflow.recovery.limit": args.limit,
+            },
+          },
+          () =>
+            runRecoveryPass({
           limit: args.limit,
           metrics: args.metrics,
           store: args.store,
-        })
+              tracer,
+            })
+        )
       } catch (error) {
         args.onError?.(error)
       } finally {

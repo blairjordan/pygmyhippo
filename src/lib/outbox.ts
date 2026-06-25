@@ -1,4 +1,5 @@
 import type { WorkflowOutboxRecord } from "../types/workflow.js"
+import { createHippoTracer, type HippoTracer } from "./tracing.js"
 import type { WorkflowStore } from "./workflow-store.js"
 
 export type OutboxHandler = (
@@ -10,7 +11,9 @@ export const drainOutbox = async (args: {
   limit: number
   onError?: (error: unknown, record: WorkflowOutboxRecord) => void
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
+  const tracer = args.tracer ?? createHippoTracer()
   const records = await args.store.claimOutboxMessages(args.limit)
   let delivered = 0
 
@@ -26,12 +29,25 @@ export const drainOutbox = async (args: {
     }
 
     try {
-      await handler(record)
-      const marked = await args.store.markOutboxDelivered(record.id)
+      await tracer.withSpan(
+        {
+          name: "hippo.outbox.deliver",
+          attributes: {
+            "hippo.operation": "outbox.deliver",
+            "workflow.outbox.id": record.id,
+            "workflow.outbox.topic": record.topic,
+            ...(record.runId === null ? {} : { "workflow.run.id": record.runId }),
+          },
+        },
+        async () => {
+          await handler(record)
+          const marked = await args.store.markOutboxDelivered(record.id)
 
-      if (marked) {
-        delivered += 1
-      }
+          if (marked) {
+            delivered += 1
+          }
+        }
+      )
     } catch (error) {
       args.onError?.(error, record)
     }
@@ -46,7 +62,9 @@ export const startOutboxLoop = (args: {
   limit: number
   onError?: (error: unknown, record?: WorkflowOutboxRecord) => void
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
+  const tracer = args.tracer ?? createHippoTracer()
   let active = true
   let inFlight = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -72,14 +90,25 @@ export const startOutboxLoop = (args: {
     inFlight = true
     inFlightPromise = (async () => {
       try {
-        await drainOutbox({
+        await tracer.withSpan(
+          {
+            name: "hippo.outbox.tick",
+            attributes: {
+              "hippo.operation": "outbox.tick",
+              "workflow.outbox.limit": args.limit,
+            },
+          },
+          () =>
+            drainOutbox({
           handlers: args.handlers,
           limit: args.limit,
           onError: (error, record) => {
             args.onError?.(error, record)
           },
           store: args.store,
-        })
+              tracer,
+            })
+        )
       } finally {
         inFlight = false
         inFlightPromise = null

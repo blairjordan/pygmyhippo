@@ -1,4 +1,5 @@
 import type { WorkflowEngine } from "./workflow-engine.js"
+import { createHippoTracer, type HippoTracer } from "./tracing.js"
 
 export const startWorkerLoop = (args: {
   engine: WorkflowEngine
@@ -8,7 +9,9 @@ export const startWorkerLoop = (args: {
   leaseMs: number
   listenForWakeups?: (onWake: () => void) => Promise<() => Promise<void>>
   onError?: (error: unknown) => void
+  tracer?: HippoTracer
 }) => {
+  const tracer = args.tracer ?? createHippoTracer()
   let active = true
   let inFlight = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -49,7 +52,17 @@ export const startWorkerLoop = (args: {
     inFlight = true
     inFlightPromise = (async () => {
       try {
-        await args.engine.tick(args.workerId, args.leaseMs, args.taskQueues)
+        await tracer.withSpan(
+          {
+            name: "hippo.worker.tick",
+            attributes: {
+              "hippo.operation": "worker.tick",
+              "workflow.worker.id": args.workerId,
+              "workflow.task_queue_count": args.taskQueues.length,
+            },
+          },
+          () => args.engine.tick(args.workerId, args.leaseMs, args.taskQueues)
+        )
       } catch (error) {
         args.onError?.(error)
       } finally {

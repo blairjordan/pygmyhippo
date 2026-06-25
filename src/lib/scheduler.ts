@@ -1,5 +1,6 @@
 import { CronExpressionParser } from "cron-parser"
 
+import { createHippoTracer, type HippoTracer } from "./tracing.js"
 import type { WorkflowEngine } from "./workflow-engine.js"
 import type { WorkflowStore } from "./workflow-store.js"
 
@@ -16,7 +17,9 @@ export const startScheduleLoop = (args: {
   limit: number
   onError?: (error: unknown) => void
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
+  const tracer = args.tracer ?? createHippoTracer()
   let active = true
   let inFlight = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -42,24 +45,46 @@ export const startScheduleLoop = (args: {
     inFlight = true
     inFlightPromise = (async () => {
       try {
-        const schedules = await args.store.fireDueSchedules({
-          limit: args.limit,
-          getNextFireAt: ({ schedule, now }) =>
-            getNextFireAt(schedule.cronExpression, now),
-        })
+        await tracer.withSpan(
+          {
+            name: "hippo.scheduler.tick",
+            attributes: {
+              "hippo.operation": "scheduler.tick",
+              "workflow.schedule.limit": args.limit,
+            },
+          },
+          async () => {
+            const schedules = await args.store.fireDueSchedules({
+              limit: args.limit,
+              getNextFireAt: ({ schedule, now }) =>
+                getNextFireAt(schedule.cronExpression, now),
+            })
 
-        for (const workflowSchedule of schedules) {
-          if (!args.engine.hasWorkflow(workflowSchedule.workflowName)) {
-            continue
+            for (const workflowSchedule of schedules) {
+              if (!args.engine.hasWorkflow(workflowSchedule.workflowName)) {
+                continue
+              }
+
+              await tracer.withSpan(
+                {
+                  name: "hippo.scheduler.dispatch",
+                  attributes: {
+                    "hippo.operation": "scheduler.dispatch",
+                    "workflow.name": workflowSchedule.workflowName,
+                    "workflow.task_queue": workflowSchedule.taskQueue,
+                  },
+                },
+                () =>
+                  args.engine.startRun({
+                    workflowName: workflowSchedule.workflowName,
+                    payload: workflowSchedule.payload,
+                    taskQueue: workflowSchedule.taskQueue,
+                    priority: workflowSchedule.priority,
+                  })
+              )
+            }
           }
-
-          await args.engine.startRun({
-            workflowName: workflowSchedule.workflowName,
-            payload: workflowSchedule.payload,
-            taskQueue: workflowSchedule.taskQueue,
-            priority: workflowSchedule.priority,
-          })
-        }
+        )
       } catch (error) {
         args.onError?.(error)
       } finally {

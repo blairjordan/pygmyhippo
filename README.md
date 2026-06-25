@@ -85,6 +85,12 @@ Transactional steps can enqueue outbox records in the same transaction as step p
 Terminal runs can branch from a prior step attempt using the stored pre-step context snapshot, which gives operators a durable way to replay from an earlier boundary without mutating workflow code.
 </td>
 </tr>
+<tr>
+<td align="center">
+<h3>🛰️ OTel Tracing</h3>
+HTTP requests, worker ticks, step execution, scheduler dispatch, recovery, outbox delivery, and store mutations emit nested OpenTelemetry-compatible spans so traces stay connected through the full runtime path.
+</td>
+</tr>
 </table>
 
 ## Quickstart
@@ -189,11 +195,16 @@ Local public package entrypoints:
 
 ```ts
 import { defineWorkflow, taskStep, endStep } from "hippo/sdk"
-import { createWorkflowEngine, createWorkflowStore } from "hippo/core"
+import { createHippoTracer, createWorkflowEngine, createWorkflowStore } from "hippo/core"
 import { createApp, startWorkerLoop } from "hippo/server"
 ```
 
 These entrypoints are verified locally through the package `exports` map today. The package is not published yet, so the source-repo workflow remains the supported install path.
+
+Tracing:
+
+- Hippo exposes `createHippoTracer()` and emits nested spans through the runtime.
+- To export traces, register your own OpenTelemetry SDK/provider in the host process before booting Hippo.
 
 Start a run:
 

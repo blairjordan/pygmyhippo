@@ -57,6 +57,12 @@ import type {
 } from "../types/workflow.js"
 import type { Database } from "./db.js"
 import { withTransaction } from "./db.js"
+import {
+  createHippoTracer,
+  createTraceAttributes,
+  type HippoTracer,
+  type TraceAttributes,
+} from "./tracing.js"
 
 type IRunRow = {
   id: string
@@ -329,8 +335,10 @@ export const createWorkflowStore = (
   options: {
     notifyRunnable?: () => Promise<void>
     notifyRunEvent?: (runId: string) => Promise<void>
+    tracer?: HippoTracer
   } = {}
 ) => {
+  const tracer = options.tracer ?? createHippoTracer()
   const notifyRunnable = async () => {
     await options.notifyRunnable?.()
   }
@@ -338,6 +346,23 @@ export const createWorkflowStore = (
   const notifyRunEvent = async (runId: string) => {
     await options.notifyRunEvent?.(runId)
   }
+
+  const withStoreSpan = <T>(
+    input: {
+      name: string
+      attributes?: TraceAttributes
+    },
+    run: () => Promise<T>
+  ) =>
+    tracer.withSpan(
+      {
+        name: `hippo.store.${input.name}`,
+        ...(input.attributes === undefined
+          ? {}
+          : { attributes: input.attributes }),
+      },
+      run
+    )
 
   const startRun = async (args: {
     parentRunId?: string | null
@@ -350,7 +375,19 @@ export const createWorkflowStore = (
     currentStepKey: string
     idempotencyKey?: string | null
   }) =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "start_run",
+        attributes: createTraceAttributes({
+          operation: "store.start_run",
+          workflowName: args.definitionName,
+          workflowVersion: args.definitionVersion,
+          stepKey: args.currentStepKey,
+          taskQueue: args.taskQueue,
+        }),
+      },
+      () =>
+        withTransaction(db, async (client) => {
       if (args.idempotencyKey) {
         const [idempotentRow] = await queryRows<
           IRunRow & { inserted: boolean }
@@ -532,21 +569,55 @@ export const createWorkflowStore = (
       await notifyRunnable()
       await notifyRunEvent(run.id)
       return run
-    })
+        })
+    )
 
   const getRun = async (runId: string) => {
-    const [row] = await getRunByIdQuery.run({ runId }, db)
-    return row ? mapRun(row) : null
+    return withStoreSpan(
+      {
+        name: "get_run",
+        attributes: createTraceAttributes({
+          operation: "store.get_run",
+          runId,
+        }),
+      },
+      async () => {
+        const [row] = await getRunByIdQuery.run({ runId }, db)
+        return row ? mapRun(row) : null
+      }
+    )
   }
 
   const getRunEvents = async (runId: string) => {
-    const rows = await getRunEventsQuery.run({ runId }, db)
-    return rows.map(mapEvent)
+    return withStoreSpan(
+      {
+        name: "get_run_events",
+        attributes: createTraceAttributes({
+          operation: "store.get_run_events",
+          runId,
+        }),
+      },
+      async () => {
+        const rows = await getRunEventsQuery.run({ runId }, db)
+        return rows.map(mapEvent)
+      }
+    )
   }
 
   const getRunAttempts = async (runId: string) => {
-    const rows = await getRunAttemptsQuery.run({ runId }, db)
-    return rows.map(mapAttempt)
+    return withStoreSpan(
+      {
+        name: "get_run_attempts",
+        attributes: createTraceAttributes({
+          operation: "store.get_run_attempts",
+          runId,
+        }),
+      },
+      async () => {
+        const rows = await getRunAttemptsQuery.run({ runId }, db)
+        return rows.map(mapAttempt)
+      }
+    )
   }
 
   const ping = async () => {
@@ -559,10 +630,23 @@ export const createWorkflowStore = (
     leaseMs: number
     taskQueues: string[]
   }) =>
-    withTransaction(db, async (client) => {
-      const [row] = await claimNextRunnableRunQuery.run(args, client)
-      return row ? mapRun(row) : null
-    })
+    withStoreSpan(
+      {
+        name: "claim_next_runnable_run",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.claim_next_runnable_run",
+            workerId: args.workerId,
+          }),
+          "workflow.task_queue_count": args.taskQueues.length,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
+          const [row] = await claimNextRunnableRunQuery.run(args, client)
+          return row ? mapRun(row) : null
+        })
+    )
 
   const beginStepAttempt = async (args: {
     runId: string
@@ -570,11 +654,23 @@ export const createWorkflowStore = (
     kind?: StepAttemptKind
     input: JsonObject
   }) =>
-    withTransaction(db, (client) =>
-      insertAttempt(client, {
-        ...args,
-        kind: args.kind ?? "forward",
-      })
+    withStoreSpan(
+      {
+        name: "begin_step_attempt",
+        attributes: createTraceAttributes({
+          operation: "store.begin_step_attempt",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          stepKind: args.kind ?? "forward",
+        }),
+      },
+      () =>
+        withTransaction(db, (client) =>
+          insertAttempt(client, {
+            ...args,
+            kind: args.kind ?? "forward",
+          })
+        )
     )
 
   const completeStepAttempt = async (args: {
@@ -645,25 +741,37 @@ export const createWorkflowStore = (
     workerId: string
     context: JsonObject
     result: JsonValue | null
-  }) => {
-    const [row] = await completeRunQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        ...args,
-        eventType: "run.completed",
-        eventPayload: {},
+        name: "complete_run",
+        attributes: createTraceAttributes({
+          operation: "store.complete_run",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          workerId: args.workerId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await completeRunQuery.run(
+          {
+            ...args,
+            eventType: "run.completed",
+            eventPayload: {},
+          },
+          db
+        )
+
+        if (!row) {
+          throw new LostLeaseError("Failed to complete run under active lease")
+        }
+
+        const run = (await getRun(mapRun(row).id)) ?? mapRun(row)
+        await notifyRunEvent(run.id)
+        await wakeParentForChild(run)
+        return run
+      }
     )
-
-    if (!row) {
-      throw new LostLeaseError("Failed to complete run under active lease")
-    }
-
-    const run = (await getRun(mapRun(row).id)) ?? mapRun(row)
-    await notifyRunEvent(run.id)
-    await wakeParentForChild(run)
-    return run
-  }
 
   const continueAsNew = async (args: {
     runId: string
@@ -676,7 +784,19 @@ export const createWorkflowStore = (
     taskQueue: string
     priority: number
   }) =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "continue_as_new",
+        attributes: createTraceAttributes({
+          operation: "store.continue_as_new",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          workerId: args.workerId,
+          taskQueue: args.taskQueue,
+        }),
+      },
+      () =>
+        withTransaction(db, async (client) => {
       const [completedRow] = await queryRows<IRunRow>(
         client,
         `
@@ -844,8 +964,9 @@ export const createWorkflowStore = (
       await notifyRunnable()
       await notifyRunEvent(completedRun.id)
       await notifyRunEvent(nextRun.id)
-      return nextRun
-    })
+          return nextRun
+        })
+    )
 
   const advanceTaskStep = async (args: {
     runId: string
@@ -855,25 +976,40 @@ export const createWorkflowStore = (
     nextStepKey: string
     context: JsonObject
     output: JsonValue | null
-  }) => {
-    const [row] = await advanceTaskStepQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        ...args,
-        eventType: "step.completed",
-        eventPayload: { nextStepKey: args.nextStepKey },
+        name: "advance_task_step",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.advance_task_step",
+            runId: args.runId,
+            stepKey: args.stepKey,
+            workerId: args.workerId,
+          }),
+          "workflow.next_step.key": args.nextStepKey,
+        },
       },
-      db
+      async () => {
+        const [row] = await advanceTaskStepQuery.run(
+          {
+            ...args,
+            eventType: "step.completed",
+            eventPayload: { nextStepKey: args.nextStepKey },
+          },
+          db
+        )
+
+        if (!row) {
+          throw new LostLeaseError("Failed to advance task step under active lease")
+        }
+
+        const run = mapRun(row)
+        await notifyRunnable()
+        await notifyRunEvent(run.id)
+        return run
+      }
     )
-
-    if (!row) {
-      throw new LostLeaseError("Failed to advance task step under active lease")
-    }
-
-    const run = mapRun(row)
-    await notifyRunnable()
-    await notifyRunEvent(run.id)
-    return run
-  }
 
   const openWait = async (args: {
     runId: string
@@ -885,24 +1021,36 @@ export const createWorkflowStore = (
     payload: JsonValue | null
     expiresAt: Date | null
     output: JsonValue | null
-  }) => {
-    const [row] = await openWaitQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        ...args,
-        eventType: "wait.opened",
-        eventPayload: { correlationKey: args.correlationKey },
+        name: "open_wait",
+        attributes: createTraceAttributes({
+          operation: "store.open_wait",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          workerId: args.workerId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await openWaitQuery.run(
+          {
+            ...args,
+            eventType: "wait.opened",
+            eventPayload: { correlationKey: args.correlationKey },
+          },
+          db
+        )
+
+        if (!row) {
+          throw new LostLeaseError("Failed to open wait under active lease")
+        }
+
+        const run = mapRun(row)
+        await notifyRunEvent(run.id)
+        return run
+      }
     )
-
-    if (!row) {
-      throw new LostLeaseError("Failed to open wait under active lease")
-    }
-
-    const run = mapRun(row)
-    await notifyRunEvent(run.id)
-    return run
-  }
 
   const scheduleRetry = async (args: {
     runId: string
@@ -911,24 +1059,36 @@ export const createWorkflowStore = (
     attemptId: string
     availableAt: Date
     error: JsonObject
-  }) => {
-    const [row] = await scheduleRetryQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        ...args,
-        eventType: "step.retry_scheduled",
-        eventPayload: { availableAt: args.availableAt.toISOString() },
+        name: "schedule_retry",
+        attributes: createTraceAttributes({
+          operation: "store.schedule_retry",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          workerId: args.workerId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await scheduleRetryQuery.run(
+          {
+            ...args,
+            eventType: "step.retry_scheduled",
+            eventPayload: { availableAt: args.availableAt.toISOString() },
+          },
+          db
+        )
+
+        if (!row) {
+          throw new LostLeaseError("Failed to schedule retry under active lease")
+        }
+
+        const run = mapRun(row)
+        await notifyRunEvent(run.id)
+        return run
+      }
     )
-
-    if (!row) {
-      throw new LostLeaseError("Failed to schedule retry under active lease")
-    }
-
-    const run = mapRun(row)
-    await notifyRunEvent(run.id)
-    return run
-  }
 
   const failRun = async (args: {
     runId: string
@@ -936,24 +1096,36 @@ export const createWorkflowStore = (
     workerId: string
     attemptId: string
     error: JsonObject
-  }) => {
-    const [row] = await failRunQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        ...args,
-        eventType: "step.failed",
-        eventPayload: args.error,
+        name: "fail_run",
+        attributes: createTraceAttributes({
+          operation: "store.fail_run",
+          runId: args.runId,
+          stepKey: args.stepKey,
+          workerId: args.workerId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await failRunQuery.run(
+          {
+            ...args,
+            eventType: "step.failed",
+            eventPayload: args.error,
+          },
+          db
+        )
+
+        if (!row) {
+          throw new LostLeaseError("Failed to mark run failed under active lease")
+        }
+
+        const run = mapRun(row)
+        await notifyRunEvent(run.id)
+        return run
+      }
     )
-
-    if (!row) {
-      throw new LostLeaseError("Failed to mark run failed under active lease")
-    }
-
-    const run = mapRun(row)
-    await notifyRunEvent(run.id)
-    return run
-  }
 
   const markRunCompensationFailed = async (args: {
     runId: string
@@ -1019,7 +1191,16 @@ export const createWorkflowStore = (
       output: JsonValue | null
     }>
   }) =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "resume_wait",
+        attributes: {
+          "hippo.operation": "store.resume_wait",
+          "workflow.wait.correlation_key": args.correlationKey,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
       const [waitRow] = await getOpenWaitForUpdateQuery.run(
         { correlationKey: args.correlationKey },
         client
@@ -1071,8 +1252,9 @@ export const createWorkflowStore = (
       const resumedRun = mapRun(updatedRow)
       await notifyRunnable()
       await notifyRunEvent(resumedRun.id)
-      return { status: "resumed" as const, run: resumedRun }
-    })
+          return { status: "resumed" as const, run: resumedRun }
+        })
+    )
 
   const consumeSignalAndResumeWait = async (args: {
     correlationKey: string
@@ -1086,7 +1268,17 @@ export const createWorkflowStore = (
     status: "resumed" | "no_signal" | "duplicate" | "missing"
     run: WorkflowRunRecord | null
   }> =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "consume_signal_and_resume_wait",
+        attributes: {
+          "hippo.operation": "store.consume_signal_and_resume_wait",
+          "workflow.wait.correlation_key": args.correlationKey,
+          "workflow.signal.name": args.signalName,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
       const [waitRow] = await getOpenWaitForUpdateQuery.run(
         { correlationKey: args.correlationKey },
         client
@@ -1148,8 +1340,9 @@ export const createWorkflowStore = (
       const resumedRun = mapRun(updatedRow)
       await notifyRunnable()
       await notifyRunEvent(resumedRun.id)
-      return { status: "resumed" as const, run: resumedRun }
-    })
+          return { status: "resumed" as const, run: resumedRun }
+        })
+    )
 
   const countOpenWaits = async () => {
     const [row] = await countOpenWaitsQuery.run(undefined, db)
@@ -1168,37 +1361,84 @@ export const createWorkflowStore = (
   }
 
   const expireOpenWaits = async (args: { limit: number }) => {
-    const [row] = await expireOpenWaitsQuery.run(args, db)
-    return requireRow(row, "Failed to expire open waits").expiredCount ?? 0
+    return withStoreSpan(
+      {
+        name: "expire_open_waits",
+        attributes: {
+          "hippo.operation": "store.expire_open_waits",
+          "workflow.recovery.limit": args.limit,
+        },
+      },
+      async () => {
+        const [row] = await expireOpenWaitsQuery.run(args, db)
+        return requireRow(row, "Failed to expire open waits").expiredCount ?? 0
+      }
+    )
   }
 
   const createSignal = async (args: {
     runId: string
     signalName: string
     payload: JsonValue | null
-  }) => {
-    const [row] = await createSignalQuery.run(args, db)
+  }) =>
+    withStoreSpan(
+      {
+        name: "create_signal",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.create_signal",
+            runId: args.runId,
+          }),
+          "workflow.signal.name": args.signalName,
+        },
+      },
+      async () => {
+        const [row] = await createSignalQuery.run(args, db)
 
-    if (row) {
-      await notifyRunnable()
-      return row.runId
-    }
+        if (row) {
+          await notifyRunnable()
+          return row.runId
+        }
 
-    return null
-  }
+        return null
+      }
+    )
 
   const consumeSignal = async (args: {
     runId: string
     signalName: string
-  }) => {
-    const [row] = await consumeSignalQuery.run(args, db)
-    return row ? mapSignal(row) : null
-  }
+  }) =>
+    withStoreSpan(
+      {
+        name: "consume_signal",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.consume_signal",
+            runId: args.runId,
+          }),
+          "workflow.signal.name": args.signalName,
+        },
+      },
+      async () => {
+        const [row] = await consumeSignalQuery.run(args, db)
+        return row ? mapSignal(row) : null
+      }
+    )
 
   const getChildRun = async (args: {
     parentRunId: string
     parentStepKey: string
-  }) => {
+  }) =>
+    withStoreSpan(
+      {
+        name: "get_child_run",
+        attributes: createTraceAttributes({
+          operation: "store.get_child_run",
+          runId: args.parentRunId,
+          stepKey: args.parentStepKey,
+        }),
+      },
+      async () => {
     const [row] = await queryRows<IRunRow>(
       db,
       `
@@ -1232,20 +1472,30 @@ export const createWorkflowStore = (
       [args.parentRunId, args.parentStepKey]
     )
 
-    if (!row) {
-      return null
-    }
+        if (!row) {
+          return null
+        }
 
-    const run = mapRun(row)
-    await notifyRunnable()
-    await notifyRunEvent(run.id)
-    return run
-  }
+        const run = mapRun(row)
+        await notifyRunnable()
+        await notifyRunEvent(run.id)
+        return run
+      }
+    )
 
-  const listChildRuns = async (parentRunId: string) => {
-    const rows = await queryRows<IRunRow>(
-      db,
-      `
+  const listChildRuns = async (parentRunId: string) =>
+    withStoreSpan(
+      {
+        name: "list_child_runs",
+        attributes: createTraceAttributes({
+          operation: "store.list_child_runs",
+          runId: parentRunId,
+        }),
+      },
+      async () => {
+        const rows = await queryRows<IRunRow>(
+          db,
+          `
         SELECT
           id,
           parent_run_id AS "parentRunId",
@@ -1271,11 +1521,12 @@ export const createWorkflowStore = (
         WHERE parent_run_id = $1
         ORDER BY created_at ASC
       `,
-      [parentRunId]
-    )
+          [parentRunId]
+        )
 
-    return rows.map(mapRun)
-  }
+        return rows.map(mapRun)
+      }
+    )
 
   const wakeParentForChild = async (childRun: WorkflowRunRecord) => {
     if (!childRun.parentRunId || !childRun.parentStepKey) {
@@ -1336,7 +1587,16 @@ export const createWorkflowStore = (
     runId: string
     mode: WorkflowCancelMode
     reason?: string
-  }) => {
+  }) =>
+    withStoreSpan(
+      {
+        name: "request_cancel_run",
+        attributes: createTraceAttributes({
+          operation: "store.request_cancel_run",
+          runId: args.runId,
+        }),
+      },
+      async () => {
     const eventType =
       args.mode === "hard" ? "run.canceled" : "run.cancel_requested"
     const eventPayload = {
@@ -1405,20 +1665,21 @@ export const createWorkflowStore = (
       [args.runId, args.mode, eventType, eventPayload]
     )
 
-    if (row) {
-      const run = mapRun(row)
-      await notifyRunnable()
-      await notifyRunEvent(run.id)
+        if (row) {
+          const run = mapRun(row)
+          await notifyRunnable()
+          await notifyRunEvent(run.id)
 
-      if (args.mode === "hard") {
-        await wakeParentForChild(run)
+          if (args.mode === "hard") {
+            await wakeParentForChild(run)
+          }
+
+          return run
+        }
+
+        return null
       }
-
-      return run
-    }
-
-    return null
-  }
+    )
 
   const cancelRunAtBoundary = async (args: {
     runId: string
@@ -1546,15 +1807,33 @@ export const createWorkflowStore = (
   >(
     text: string,
     values: readonly unknown[] = []
-  ) => {
-    const result = await db.query<T>(text, [...values])
-    return {
-      rows: result.rows,
-    }
-  }
+  ) =>
+    withStoreSpan(
+      {
+        name: "query_step_database",
+        attributes: {
+          "hippo.operation": "store.query_step_database",
+        },
+      },
+      async () => {
+        const result = await db.query<T>(text, [...values])
+        return {
+          rows: result.rows,
+        }
+      }
+    )
 
   const claimOutboxMessages = async (limit: number) =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "claim_outbox_messages",
+        attributes: {
+          "hippo.operation": "store.claim_outbox_messages",
+          "workflow.outbox.limit": limit,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
       const rows = await queryRows<{
         id: string
         runId: string | null
@@ -1594,13 +1873,23 @@ export const createWorkflowStore = (
         [limit]
       )
 
-      return rows.map(mapOutbox)
-    })
+          return rows.map(mapOutbox)
+        })
+    )
 
   const markOutboxDelivered = async (outboxId: string) => {
-    const rows = await queryRows<{ delivered: number }>(
-      db,
-      `
+    return withStoreSpan(
+      {
+        name: "mark_outbox_delivered",
+        attributes: {
+          "hippo.operation": "store.mark_outbox_delivered",
+          "workflow.outbox.id": outboxId,
+        },
+      },
+      async () => {
+        const rows = await queryRows<{ delivered: number }>(
+          db,
+          `
         UPDATE workflow_outbox
         SET
           delivered_at = now(),
@@ -1609,10 +1898,12 @@ export const createWorkflowStore = (
           AND delivered_at IS NULL
         RETURNING 1::int AS delivered
       `,
-      [outboxId]
-    )
+          [outboxId]
+        )
 
-    return rows.length > 0
+        return rows.length > 0
+      }
+    )
   }
 
   const createSchedule = async (args: {
@@ -1622,8 +1913,21 @@ export const createWorkflowStore = (
     taskQueue: string
     priority: number
     nextFireAt: Date
-  }) => {
-    const rows = await queryRows<{
+  }) =>
+    withStoreSpan(
+      {
+        name: "create_schedule",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.create_schedule",
+            workflowName: args.workflowName,
+            taskQueue: args.taskQueue,
+          }),
+          "workflow.schedule.cron": args.cronExpression,
+        },
+      },
+      async () => {
+        const rows = await queryRows<{
       id: string
       workflowName: string
       cronExpression: string
@@ -1674,8 +1978,9 @@ export const createWorkflowStore = (
       ]
     )
 
-    return mapSchedule(requireRow(rows[0], "Failed to create schedule"))
-  }
+        return mapSchedule(requireRow(rows[0], "Failed to create schedule"))
+      }
+    )
 
   const listSchedules = async () => {
     const rows = await queryRows<{
@@ -1718,21 +2023,30 @@ export const createWorkflowStore = (
       now: Date
     }) => Date
   }) =>
-    withTransaction(db, async (client) => {
-      const scheduleRows = await queryRows<{
-        id: string
-        workflowName: string
-        cronExpression: string
-        payload: JsonValue
-        taskQueue: string
-        priority: number
-        active: boolean
-        nextFireAt: Date
-        createdAt: Date
-        updatedAt: Date
-      }>(
-        client,
-        `
+    withStoreSpan(
+      {
+        name: "fire_due_schedules",
+        attributes: {
+          "hippo.operation": "store.fire_due_schedules",
+          "workflow.schedule.limit": args.limit,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
+          const scheduleRows = await queryRows<{
+            id: string
+            workflowName: string
+            cronExpression: string
+            payload: JsonValue
+            taskQueue: string
+            priority: number
+            active: boolean
+            nextFireAt: Date
+            createdAt: Date
+            updatedAt: Date
+          }>(
+            client,
+            `
           SELECT
             id,
             workflow_name AS "workflowName",
@@ -1751,31 +2065,32 @@ export const createWorkflowStore = (
           FOR UPDATE SKIP LOCKED
           LIMIT $1
         `,
-        [args.limit]
-      )
-      const now = new Date()
-      const fired: WorkflowScheduleRecord[] = []
+            [args.limit]
+          )
+          const now = new Date()
+          const fired: WorkflowScheduleRecord[] = []
 
-      for (const row of scheduleRows) {
-        const schedule = mapSchedule(row)
-        const nextFireAt = args.getNextFireAt({ schedule, now })
+          for (const row of scheduleRows) {
+            const schedule = mapSchedule(row)
+            const nextFireAt = args.getNextFireAt({ schedule, now })
 
-        await queryRows(
-          client,
-          `
+            await queryRows(
+              client,
+              `
             UPDATE workflow_schedules
             SET
               next_fire_at = $2,
               updated_at = now()
             WHERE id = $1
           `,
-          [schedule.id, nextFireAt]
-        )
-        fired.push(schedule)
-      }
+              [schedule.id, nextFireAt]
+            )
+            fired.push(schedule)
+          }
 
-      return fired
-    })
+          return fired
+        })
+    )
 
   const executeTransactionalTask = async (args: {
     run: WorkflowRunRecord
@@ -1794,8 +2109,23 @@ export const createWorkflowStore = (
     runTask: (
       context: StepExecutionContext
     ) => Promise<TaskStepResult> | TaskStepResult
-  }) => {
-    const outcome = await withTransaction(db, async (client) => {
+  }) =>
+    withStoreSpan(
+      {
+        name: "execute_transactional_task",
+        attributes: createTraceAttributes({
+          operation: "store.execute_transactional_task",
+          workflowName: args.run.definitionName,
+          workflowVersion: args.run.definitionVersion,
+          runId: args.run.id,
+          stepKey: args.stepKey,
+          stepKind: "task",
+          taskQueue: args.run.taskQueue,
+          workerId: args.workerId,
+        }),
+      },
+      async () => {
+        const outcome = await withTransaction(db, async (client) => {
       const [lockedRunRow] = await queryRows<IRunRow>(
         client,
         `
@@ -1892,10 +2222,26 @@ export const createWorkflowStore = (
       await client.query("SAVEPOINT hippo_step_body")
 
       try {
-        const result = await withPromiseTimeout(
-          Promise.resolve(args.runTask(context)),
-          args.timeoutMs,
-          `Task step "${args.stepKey}" in workflow "${lockedRun.definitionName}"`
+        const result = await tracer.withSpan(
+          {
+            name: "hippo.workflow.step.run_task",
+            attributes: createTraceAttributes({
+              operation: "workflow.step.run_task",
+              workflowName: lockedRun.definitionName,
+              workflowVersion: lockedRun.definitionVersion,
+              runId: lockedRun.id,
+              stepKey: args.stepKey,
+              stepKind: "task",
+              taskQueue: lockedRun.taskQueue,
+              workerId: args.workerId,
+            }),
+          },
+          () =>
+            withPromiseTimeout(
+              Promise.resolve(args.runTask(context)),
+              args.timeoutMs,
+              `Task step "${args.stepKey}" in workflow "${lockedRun.definitionName}"`
+            )
         )
         const nextStepKey = result.transition ?? args.nextStepKey
 
@@ -2145,66 +2491,96 @@ export const createWorkflowStore = (
           run: mapRun(updatedRow),
         }
       }
-    })
-    if (outcome.run) {
-      await notifyRunEvent(outcome.run.id)
+        })
+        if (outcome.run) {
+          await notifyRunEvent(outcome.run.id)
 
-      if (outcome.outcome === "completed") {
-        await notifyRunnable()
+          if (outcome.outcome === "completed") {
+            await notifyRunnable()
+          }
+        }
+
+        return outcome
       }
-    }
-
-    return outcome
-  }
+    )
 
   const cancelRun = async (args: {
     runId: string
     reason?: string
-  }) => {
-    const [row] = await cancelRunQuery.run(
+  }) =>
+    withStoreSpan(
       {
-        runId: args.runId,
-        eventType: "run.canceled",
-        eventPayload: args.reason ? { reason: args.reason } : {},
+        name: "cancel_run",
+        attributes: createTraceAttributes({
+          operation: "store.cancel_run",
+          runId: args.runId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await cancelRunQuery.run(
+          {
+            runId: args.runId,
+            eventType: "run.canceled",
+            eventPayload: args.reason ? { reason: args.reason } : {},
+          },
+          db
+        )
+
+        if (!row) {
+          return null
+        }
+
+        const run = mapRun(row)
+        await notifyRunnable()
+        await notifyRunEvent(run.id)
+        return run
+      }
     )
 
-    if (!row) {
-      return null
-    }
-
-    const run = mapRun(row)
-    await notifyRunnable()
-    await notifyRunEvent(run.id)
-    return run
-  }
-
-  const retryRun = async (runId: string) => {
-    const [row] = await retryRunQuery.run(
+  const retryRun = async (runId: string) =>
+    withStoreSpan(
       {
-        runId,
-        eventType: "run.retried",
-        eventPayload: {},
+        name: "retry_run",
+        attributes: createTraceAttributes({
+          operation: "store.retry_run",
+          runId,
+        }),
       },
-      db
+      async () => {
+        const [row] = await retryRunQuery.run(
+          {
+            runId,
+            eventType: "run.retried",
+            eventPayload: {},
+          },
+          db
+        )
+
+        if (!row) {
+          return null
+        }
+
+        const run = mapRun(row)
+        await notifyRunnable()
+        return run
+      }
     )
-
-    if (!row) {
-      return null
-    }
-
-    const run = mapRun(row)
-    await notifyRunnable()
-    return run
-  }
 
   const branchRun = async (args: {
     runId: string
     attemptId: string
     mode: "rewind" | "fork"
   }) =>
-    withTransaction(db, async (client) => {
+    withStoreSpan(
+      {
+        name: "branch_run",
+        attributes: createTraceAttributes({
+          operation: args.mode === "rewind" ? "store.rewind_run" : "store.fork_run",
+          runId: args.runId,
+        }),
+      },
+      () =>
+        withTransaction(db, async (client) => {
       const [sourceRunRow] = await getRunByIdForUpdateQuery.run(
         { runId: args.runId },
         client
@@ -2309,22 +2685,33 @@ export const createWorkflowStore = (
       await notifyRunnable()
       await notifyRunEvent(sourceRun.id)
       await notifyRunEvent(nextRun.id)
-      return nextRun
-    })
+          return nextRun
+        })
+    )
 
-  const recoverExpiredLeases = async (args: { limit: number }) => {
-    const [row] = await recoverExpiredLeasesQuery.run(args, db)
-    const reclaimed = requireRow(
-      row,
-      "Failed to recover expired leases"
-    ).reclaimedCount ?? 0
+  const recoverExpiredLeases = async (args: { limit: number }) =>
+    withStoreSpan(
+      {
+        name: "recover_expired_leases",
+        attributes: {
+          "hippo.operation": "store.recover_expired_leases",
+          "workflow.recovery.limit": args.limit,
+        },
+      },
+      async () => {
+        const [row] = await recoverExpiredLeasesQuery.run(args, db)
+        const reclaimed = requireRow(
+          row,
+          "Failed to recover expired leases"
+        ).reclaimedCount ?? 0
 
-    if (reclaimed > 0) {
-      await notifyRunnable()
-    }
+        if (reclaimed > 0) {
+          await notifyRunnable()
+        }
 
-    return reclaimed
-  }
+        return reclaimed
+      }
+    )
 
   return {
     advanceTaskStep,

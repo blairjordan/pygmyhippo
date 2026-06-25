@@ -12,6 +12,11 @@ import type {
   WorkflowRunRecord,
 } from "../types/workflow.js"
 import type { HippoMetrics } from "./metrics.js"
+import {
+  createHippoTracer,
+  createTraceAttributes,
+  type HippoTracer,
+} from "./tracing.js"
 import { LostLeaseError, type WorkflowStore } from "./workflow-store.js"
 
 const asErrorPayload = (error: unknown): JsonObject => ({
@@ -326,6 +331,7 @@ const continueRun = async (args: {
   definitions: DefinitionRegistry
   metrics: HippoMetrics
   store: WorkflowStore
+  tracer: HippoTracer
   workerId: string
   run: WorkflowRunRecord
 }) => {
@@ -417,31 +423,61 @@ const continueRun = async (args: {
       return activeRun
     }
 
-    const attempt = await args.store.beginStepAttempt({
-      runId: activeRun.id,
-      stepKey,
-      input: createStepInput(activeRun, stepKey),
-    })
-    const executionContext = createExecutionContext({
-      run: activeRun,
-      attempt: attempt.attempt,
-      stepKey,
-      heartbeat: () =>
-        args.store.extendLease({
+    const stepResult = await args.tracer.withSpan(
+      {
+        name: "hippo.workflow.step.execute",
+        attributes: createTraceAttributes({
+          operation: "workflow.step.execute",
+          workflowName: activeRun.definitionName,
+          workflowVersion: activeRun.definitionVersion,
           runId: activeRun.id,
           stepKey,
-          attemptId: attempt.id,
+          stepKind: step.kind,
+          taskQueue: activeRun.taskQueue,
           workerId: args.workerId,
-          leaseMs: 15_000,
         }),
-      db: stepBindings.db,
-      outbox: stepBindings.outbox,
-      transactional: false,
-    })
+      },
+      async () => {
+        const attempt = await args.store.beginStepAttempt({
+          runId: activeRun.id,
+          stepKey,
+          input: createStepInput(activeRun, stepKey),
+        })
+        const executionContext = createExecutionContext({
+          run: activeRun,
+          attempt: attempt.attempt,
+          stepKey,
+          heartbeat: () =>
+            args.store.extendLease({
+              runId: activeRun.id,
+              stepKey,
+              attemptId: attempt.id,
+              workerId: args.workerId,
+              leaseMs: 15_000,
+            }),
+          db: stepBindings.db,
+          outbox: stepBindings.outbox,
+          transactional: false,
+        })
 
-    try {
+        try {
       if (step.kind === "wait") {
-        const waitResult = await step.open(executionContext)
+        const waitResult = await args.tracer.withSpan(
+          {
+            name: "hippo.workflow.step.wait.open",
+            attributes: createTraceAttributes({
+              operation: "workflow.step.wait.open",
+              workflowName: activeRun.definitionName,
+              workflowVersion: activeRun.definitionVersion,
+              runId: activeRun.id,
+              stepKey,
+              stepKind: step.kind,
+              taskQueue: activeRun.taskQueue,
+              workerId: args.workerId,
+            }),
+          },
+          () => Promise.resolve(step.open(executionContext))
+        )
         activeRun = await args.store.openWait({
           runId: activeRun.id,
           stepKey,
@@ -471,23 +507,34 @@ const continueRun = async (args: {
           })
 
         const signal = await consumeSignal()
-        const resumeSignal = async (args: {
+        const resumeSignal = async (input: {
           run: WorkflowRunRecord
           payload: JsonValue | undefined
           attempt: number
         }) => {
           const signalExecutionContext = createExecutionContext({
-            run: args.run,
-            attempt: args.attempt,
+            run: input.run,
+            attempt: input.attempt,
             stepKey,
             heartbeat: async () => false,
             db: stepBindings.db,
             outbox: stepBindings.outbox,
             transactional: false,
           })
-          const result: WaitStepResumeResult = await step.resume(
-            signalExecutionContext,
-            args.payload
+          const result: WaitStepResumeResult = await args.tracer.withSpan(
+            {
+              name: "hippo.workflow.step.signal.resume",
+              attributes: createTraceAttributes({
+                operation: "workflow.step.signal.resume",
+                workflowName: input.run.definitionName,
+                workflowVersion: input.run.definitionVersion,
+                runId: input.run.id,
+                stepKey,
+                stepKind: step.kind,
+                taskQueue: input.run.taskQueue,
+              }),
+            },
+            () => Promise.resolve(step.resume(signalExecutionContext, input.payload))
           )
           const nextStepKey = result.transition ?? step.next
 
@@ -579,9 +626,21 @@ const continueRun = async (args: {
             outbox: stepBindings.outbox,
             transactional: false,
           })
-          const result: ChildStepResult = await step.resume(
-            childExecutionContext,
-            run
+          const result: ChildStepResult = await args.tracer.withSpan(
+            {
+              name: "hippo.workflow.step.child.resume",
+              attributes: createTraceAttributes({
+                operation: "workflow.step.child.resume",
+                workflowName: activeRun.definitionName,
+                workflowVersion: activeRun.definitionVersion,
+                runId: activeRun.id,
+                stepKey,
+                stepKind: step.kind,
+                taskQueue: activeRun.taskQueue,
+                workerId: args.workerId,
+              }),
+            },
+            () => Promise.resolve(step.resume(childExecutionContext, run))
           )
           const nextStepKey = result.transition ?? step.next
 
@@ -619,7 +678,22 @@ const continueRun = async (args: {
         }
 
         if (!childRun) {
-          const childInput = await Promise.resolve(step.input(executionContext))
+          const childInput = await args.tracer.withSpan(
+            {
+              name: "hippo.workflow.step.child.input",
+              attributes: createTraceAttributes({
+                operation: "workflow.step.child.input",
+                workflowName: activeRun.definitionName,
+                workflowVersion: activeRun.definitionVersion,
+                runId: activeRun.id,
+                stepKey,
+                stepKind: step.kind,
+                taskQueue: activeRun.taskQueue,
+                workerId: args.workerId,
+              }),
+            },
+            () => Promise.resolve(step.input(executionContext))
+          )
           await args.store.startRun({
             parentRunId: activeRun.id,
             parentStepKey: stepKey,
@@ -716,6 +790,7 @@ const continueRun = async (args: {
               definitions: args.definitions,
               metrics: args.metrics,
               store: args.store,
+              tracer: args.tracer,
               run: activeRun,
             })
           }
@@ -724,10 +799,26 @@ const continueRun = async (args: {
         return activeRun
       }
 
-      const result = await withTimeout(
-        Promise.resolve(step.run(executionContext)),
-        step.timeoutMs,
-        `Task step "${stepKey}" in workflow "${definition.name}"`
+      const result = await args.tracer.withSpan(
+        {
+          name: "hippo.workflow.step.task.run",
+          attributes: createTraceAttributes({
+            operation: "workflow.step.task.run",
+            workflowName: activeRun.definitionName,
+            workflowVersion: activeRun.definitionVersion,
+            runId: activeRun.id,
+            stepKey,
+            stepKind: step.kind,
+            taskQueue: activeRun.taskQueue,
+            workerId: args.workerId,
+          }),
+        },
+        () =>
+          withTimeout(
+            Promise.resolve(step.run(executionContext)),
+            step.timeoutMs,
+            `Task step "${stepKey}" in workflow "${definition.name}"`
+          )
       )
 
       if (result.continueAsNew) {
@@ -781,7 +872,7 @@ const continueRun = async (args: {
         status: "completed",
       })
       return activeRun
-    } catch (error) {
+        } catch (error) {
       if (error instanceof LostLeaseError) {
         return null
       }
@@ -834,6 +925,7 @@ const continueRun = async (args: {
           definitions: args.definitions,
           metrics: args.metrics,
           store: args.store,
+          tracer: args.tracer,
           run: activeRun,
         })
       }
@@ -843,8 +935,16 @@ const continueRun = async (args: {
         step: stepKey,
         status: "failed",
       })
-      return activeRun
+          return activeRun
+        }
+      }
+    )
+
+    if (stepResult === null) {
+      return null
     }
+
+    return stepResult
   }
 
   return activeRun
@@ -854,6 +954,7 @@ const compensateRun = async (args: {
   definitions: DefinitionRegistry
   metrics: HippoMetrics
   store: WorkflowStore
+  tracer: HippoTracer
   run: WorkflowRunRecord
 }) => {
   if (args.run.status !== "failed" && args.run.status !== "canceled") {
@@ -931,8 +1032,22 @@ const compensateRun = async (args: {
       })
 
       try {
-        await Promise.resolve(
-          item.compensation.run(
+        await args.tracer.withSpan(
+          {
+            name: "hippo.workflow.compensation.run",
+            attributes: createTraceAttributes({
+              operation: "workflow.compensation.run",
+              workflowName: activeRun.definitionName,
+              workflowVersion: activeRun.definitionVersion,
+              runId: activeRun.id,
+              stepKey: item.stepKey,
+              stepKind: "compensate",
+              taskQueue: activeRun.taskQueue,
+            }),
+          },
+          () =>
+            Promise.resolve(
+              item.compensation.run(
             createExecutionContext({
               run: activeRun,
               attempt: compensationAttempt.attempt,
@@ -957,6 +1072,7 @@ const compensateRun = async (args: {
             }),
             cause
           )
+            )
         )
         await args.store.completeStepAttempt({
           runId: activeRun.id,
@@ -1005,8 +1121,10 @@ export const createWorkflowEngine = (args: {
   definitions: WorkflowDefinition[]
   metrics: HippoMetrics
   store: WorkflowStore
+  tracer?: HippoTracer
 }) => {
   const definitions = createDefinitionRegistry(args.definitions)
+  const tracer = args.tracer ?? createHippoTracer()
 
   const startRun = async (input: {
     workflowName: string
@@ -1015,22 +1133,34 @@ export const createWorkflowEngine = (args: {
     taskQueue?: string
     priority?: number
   }) => {
-    const definition = requireDefinition(definitions, input.workflowName)
+    return tracer.withSpan(
+      {
+        name: "hippo.workflow.start_run",
+        attributes: createTraceAttributes({
+          operation: "workflow.start_run",
+          workflowName: input.workflowName,
+          taskQueue: input.taskQueue ?? "default",
+        }),
+      },
+      async () => {
+        const definition = requireDefinition(definitions, input.workflowName)
 
-    const run = await args.store.startRun({
-      definitionName: definition.name,
-      definitionVersion: definition.version,
-      taskQueue: input.taskQueue ?? "default",
-      priority: input.priority ?? 0,
-      input: input.payload,
-      currentStepKey: definition.startAt,
-      ...(input.idempotencyKey === undefined
-        ? {}
-        : { idempotencyKey: input.idempotencyKey }),
-    })
+        const run = await args.store.startRun({
+          definitionName: definition.name,
+          definitionVersion: definition.version,
+          taskQueue: input.taskQueue ?? "default",
+          priority: input.priority ?? 0,
+          input: input.payload,
+          currentStepKey: definition.startAt,
+          ...(input.idempotencyKey === undefined
+            ? {}
+            : { idempotencyKey: input.idempotencyKey }),
+        })
 
-    args.metrics.runsStarted.inc({ workflow: definition.name })
-    return run
+        args.metrics.runsStarted.inc({ workflow: definition.name })
+        return run
+      }
+    )
   }
 
   const tick = async (
@@ -1038,24 +1168,39 @@ export const createWorkflowEngine = (args: {
     leaseMs: number,
     taskQueues = ["default"]
   ) => {
-    const claimedRun = await args.store.claimNextRunnableRun({
-      workerId,
-      leaseMs,
-      taskQueues,
-    })
+    return tracer.withSpan(
+      {
+        name: "hippo.workflow.tick",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "workflow.tick",
+            workerId,
+          }),
+          "workflow.task_queue_count": taskQueues.length,
+        },
+      },
+      async () => {
+        const claimedRun = await args.store.claimNextRunnableRun({
+          workerId,
+          leaseMs,
+          taskQueues,
+        })
 
-    if (!claimedRun) {
-      return null
-    }
+        if (!claimedRun) {
+          return null
+        }
 
-    args.metrics.claims.inc()
-    return continueRun({
-      definitions,
-      metrics: args.metrics,
-      store: args.store,
-      workerId,
-      run: claimedRun,
-    })
+        args.metrics.claims.inc()
+        return continueRun({
+          definitions,
+          metrics: args.metrics,
+          store: args.store,
+          tracer,
+          workerId,
+          run: claimedRun,
+        })
+      }
+    )
   }
 
   const runCompensation = async (runId: string) => {
@@ -1065,12 +1210,26 @@ export const createWorkflowEngine = (args: {
       return null
     }
 
-    return compensateRun({
-      definitions,
-      metrics: args.metrics,
-      store: args.store,
-      run,
-    })
+    return tracer.withSpan(
+      {
+        name: "hippo.workflow.run_compensation",
+        attributes: createTraceAttributes({
+          operation: "workflow.run_compensation",
+          workflowName: run.definitionName,
+          workflowVersion: run.definitionVersion,
+          runId: run.id,
+          taskQueue: run.taskQueue,
+        }),
+      },
+      () =>
+        compensateRun({
+          definitions,
+          metrics: args.metrics,
+          store: args.store,
+          tracer,
+          run,
+        })
+    )
   }
 
   const resumeWait = async (input: {
@@ -1078,7 +1237,16 @@ export const createWorkflowEngine = (args: {
     payload?: JsonValue
   }) =>
     {
-      const resumed = await args.store.resumeWait({
+      return tracer.withSpan(
+        {
+          name: "hippo.workflow.resume_wait",
+          attributes: {
+            "hippo.operation": "workflow.resume_wait",
+            "workflow.wait.correlation_key": input.correlationKey,
+          },
+        },
+        async () => {
+          const resumed = await args.store.resumeWait({
         correlationKey: input.correlationKey,
         payload: input.payload,
         resume: async (run, wait) => {
@@ -1136,8 +1304,10 @@ export const createWorkflowEngine = (args: {
         },
       })
 
-      args.metrics.waitOpens.set(await args.store.countOpenWaits())
-      return resumed
+          args.metrics.waitOpens.set(await args.store.countOpenWaits())
+          return resumed
+        }
+      )
     }
 
   return {
