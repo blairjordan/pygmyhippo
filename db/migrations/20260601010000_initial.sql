@@ -7,6 +7,7 @@ CREATE TYPE workflow_run_status AS ENUM (
   'waiting',
   'completed',
   'failed',
+  'compensation_failed',
   'canceled'
 );
 
@@ -14,6 +15,11 @@ CREATE TYPE step_attempt_status AS ENUM (
   'started',
   'completed',
   'failed'
+);
+
+CREATE TYPE step_attempt_kind AS ENUM (
+  'forward',
+  'compensate'
 );
 
 CREATE TYPE workflow_wait_status AS ENUM (
@@ -61,6 +67,7 @@ CREATE TABLE workflow_step_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id UUID NOT NULL REFERENCES workflow_runs (id) ON DELETE CASCADE,
   step_key TEXT NOT NULL,
+  kind step_attempt_kind NOT NULL DEFAULT 'forward',
   attempt INTEGER NOT NULL,
   status step_attempt_status NOT NULL,
   input JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -71,11 +78,11 @@ CREATE TABLE workflow_step_attempts (
   completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (run_id, step_key, attempt)
+  UNIQUE (run_id, step_key, kind, attempt)
 );
 
 CREATE INDEX workflow_step_attempts_run_id_idx
-  ON workflow_step_attempts (run_id, step_key, attempt DESC);
+  ON workflow_step_attempts (run_id, step_key, kind, attempt DESC);
 
 CREATE TABLE workflow_waits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

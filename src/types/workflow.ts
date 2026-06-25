@@ -6,11 +6,14 @@ export type WorkflowRunStatus =
   | "waiting"
   | "completed"
   | "failed"
+  | "compensation_failed"
   | "canceled"
 
 export type WorkflowCancelMode = "graceful" | "hard"
 
 export type StepAttemptStatus = "started" | "completed" | "failed"
+
+export type StepAttemptKind = "forward" | "compensate"
 
 export type WorkflowRunRecord = {
   id: string
@@ -62,6 +65,7 @@ export type WorkflowStepAttemptRecord = {
   id: string
   runId: string
   stepKey: string
+  kind: StepAttemptKind
   attempt: number
   status: StepAttemptStatus
   input: JsonObject
@@ -160,12 +164,23 @@ export type StepExecutionContext = {
   transactional: boolean
 }
 
+export type CompensationHandler = (
+  context: StepExecutionContext,
+  cause: JsonValue | null
+) => Promise<void> | void
+
+export type CompensationDefinition = {
+  run: CompensationHandler
+  retry?: RetryPolicy
+}
+
 export type TaskStepDefinition = {
   kind: "task"
   label?: string
   next?: string
   transitions?: Record<string, string>
   retry?: RetryPolicy
+  compensate?: CompensationHandler | CompensationDefinition
   timeoutMs?: number
   transactional?: boolean
   run: (context: StepExecutionContext) => Promise<TaskStepResult> | TaskStepResult

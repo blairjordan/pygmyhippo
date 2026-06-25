@@ -137,6 +137,7 @@ const statusToneByRun = {
   waiting: "tone-waiting",
   completed: "tone-completed",
   failed: "tone-failed",
+  compensation_failed: "tone-failed",
   canceled: "tone-canceled",
 } as const
 
@@ -1000,6 +1001,7 @@ const renderRunDetailDocument = (args: {
 </html>`
 
 const renderAttemptCard = (attempt: {
+  kind?: string
   attempt: number
   completedAt: Date | null
   error: JsonValue | null
@@ -1008,9 +1010,10 @@ const renderAttemptCard = (attempt: {
   status: string
   stepKey: string
 }) => `<article class="entry">
-  <strong>${escapeHtml(attempt.stepKey)} · attempt ${String(attempt.attempt)}</strong>
+  <strong>${escapeHtml(attempt.stepKey)} · ${escapeHtml(attempt.kind === "compensate" ? "compensate" : "attempt")} ${String(attempt.attempt)}</strong>
   <time>${escapeHtml(formatDateTime(attempt.startedAt))} → ${escapeHtml(formatDateTime(attempt.completedAt))}</time>
   <pre>${formatJson({
+    kind: attempt.kind ?? "forward",
     status: attempt.status,
     output: attempt.output,
     error: attempt.error,
@@ -1092,6 +1095,24 @@ const propagateCancellation = async (args: {
       store: args.store,
     })
   }
+}
+
+const compensateRunTree = async (args: {
+  engine: WorkflowEngine
+  runId: string
+  store: WorkflowStore
+}) => {
+  const childRuns = await args.store.listChildRuns(args.runId)
+
+  for (const childRun of childRuns) {
+    await compensateRunTree({
+      engine: args.engine,
+      runId: childRun.id,
+      store: args.store,
+    })
+  }
+
+  return args.engine.runCompensation(args.runId)
 }
 
 export const createWorkflowRoutes = (args: {
@@ -1261,10 +1282,19 @@ export const createWorkflowRoutes = (args: {
       store: args.store,
     })
 
+    const compensatedRun =
+      body.mode === "hard"
+        ? await compensateRunTree({
+        engine: args.engine,
+        runId: run.id,
+        store: args.store,
+          })
+        : null
+
     return {
       runId: run.id,
-      status: run.status,
-      currentStepKey: run.currentStepKey,
+      status: compensatedRun?.status ?? run.status,
+      currentStepKey: compensatedRun?.currentStepKey ?? run.currentStepKey,
     }
   })
 
@@ -1297,10 +1327,16 @@ export const createWorkflowRoutes = (args: {
       store: args.store,
     })
 
+    const compensatedRun = await compensateRunTree({
+      engine: args.engine,
+      runId: run.id,
+      store: args.store,
+    })
+
     return {
       runId: run.id,
-      status: run.status,
-      currentStepKey: run.currentStepKey,
+      status: compensatedRun?.status ?? run.status,
+      currentStepKey: compensatedRun?.currentStepKey ?? run.currentStepKey,
     }
   })
 

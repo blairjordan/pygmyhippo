@@ -160,16 +160,21 @@ const createStoreStub = () => {
     async beginStepAttempt(args: {
       runId: string
       stepKey: string
+      kind?: "forward" | "compensate"
       input: JsonObject
     }) {
+      const kind = args.kind ?? "forward"
       const attempt: WorkflowStepAttemptRecord = {
         id: `attempt-${++attemptCounter}`,
         runId: args.runId,
         stepKey: args.stepKey,
+        kind,
         attempt:
           attempts.filter(
             (candidate) =>
-              candidate.runId === args.runId && candidate.stepKey === args.stepKey
+              candidate.runId === args.runId &&
+              candidate.stepKey === args.stepKey &&
+              candidate.kind === kind
           ).length + 1,
         status: "started",
         input: args.input,
@@ -227,6 +232,23 @@ const createStoreStub = () => {
       appendEvent({ runId: run.id, stepKey: run.currentStepKey, eventType: "run.completed" })
       wakeParentForChildRun(next)
       return next
+    },
+    async completeStepAttempt(args: {
+      attemptId: string
+      output: JsonValue | null
+      runId: string
+      stepKey: string
+    }) {
+      const attempt = attempts.find((candidate) => candidate.id === args.attemptId)!
+      attempt.status = "completed"
+      attempt.output = args.output
+      attempt.completedAt = now()
+      appendEvent({
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: "compensation.completed",
+      })
+      return attempt
     },
     async countOpenWaits() {
       return [...waits.values()].filter((wait) => wait.status === "open").length
@@ -394,6 +416,24 @@ const createStoreStub = () => {
       wakeParentForChildRun(next)
       return next
     },
+    async failStepAttempt(args: {
+      attemptId: string
+      error: JsonObject
+      runId: string
+      stepKey: string
+    }) {
+      const attempt = attempts.find((candidate) => candidate.id === args.attemptId)!
+      attempt.status = "failed"
+      attempt.error = args.error
+      attempt.completedAt = now()
+      appendEvent({
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: "compensation.failed",
+        payload: args.error,
+      })
+      return attempt
+    },
     async getRun(runId: string) {
       return runs.get(runId) ?? null
     },
@@ -434,6 +474,27 @@ const createStoreStub = () => {
     },
     async markOutboxDelivered() {
       return true
+    },
+    async markRunCompensationFailed(args: {
+      runId: string
+      stepKey: string
+      error: JsonObject
+    }) {
+      const run = runs.get(args.runId)!
+      const next: WorkflowRunRecord = {
+        ...run,
+        status: "compensation_failed",
+        error: args.error,
+        completedAt: now(),
+      }
+      runs.set(run.id, next)
+      appendEvent({
+        runId: run.id,
+        stepKey: args.stepKey,
+        eventType: "run.compensation_failed",
+        payload: args.error,
+      })
+      return next
     },
     async openWait(args: {
       runId: string
@@ -1414,6 +1475,127 @@ describe("workflow engine", () => {
     expect(completedParent?.context.childStatus).toBe("completed")
     expect(childRuns).toHaveLength(1)
     expect(childRuns[0]?.status).toBe("completed")
+  })
+
+  it("compensates completed steps when a run fails", async () => {
+    const compensate = vi.fn(async (_context: StepExecutionContext, cause: JsonValue | null) => {
+      expect(cause).toMatchObject({
+        message: "explode",
+      })
+    })
+    const workflow = defineWorkflow({
+      name: "compensate-on-failure",
+      version: 1,
+      startAt: "charge",
+      steps: {
+        charge: taskStep({
+          kind: "task",
+          next: "explode",
+          run: () => ({
+            patch: {
+              charged: true,
+            },
+          }),
+          compensate,
+        }),
+        explode: taskStep({
+          kind: "task",
+          next: "done",
+          run: () => {
+            throw new Error("explode")
+          },
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const failedRun = await store.getRun(run.id)
+    const attempts = await store.getRunAttempts(run.id)
+
+    expect(failedRun?.status).toBe("failed")
+    expect(compensate).toHaveBeenCalledTimes(1)
+    expect(
+      attempts.filter(
+        (attempt) =>
+          attempt.kind === "compensate" &&
+          attempt.stepKey === "charge" &&
+          attempt.status === "completed"
+      )
+    ).toHaveLength(1)
+  })
+
+  it("marks the run when compensation exhausts its retries", async () => {
+    const workflow = defineWorkflow({
+      name: "compensation-failure",
+      version: 1,
+      startAt: "charge",
+      steps: {
+        charge: taskStep({
+          kind: "task",
+          next: "explode",
+          run: () => ({
+            patch: {
+              charged: true,
+            },
+          }),
+          compensate: {
+            retry: {
+              maxAttempts: 2,
+              initialBackoffMs: 0,
+              jitterMs: 0,
+            },
+            run: () => {
+              throw new Error("undo failed")
+            },
+          },
+        }),
+        explode: taskStep({
+          kind: "task",
+          next: "done",
+          run: () => {
+            throw new Error("explode")
+          },
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const failedRun = await store.getRun(run.id)
+    const attempts = await store.getRunAttempts(run.id)
+
+    expect(failedRun?.status).toBe("compensation_failed")
+    expect(
+      attempts.filter(
+        (attempt) =>
+          attempt.kind === "compensate" && attempt.stepKey === "charge"
+      )
+    ).toHaveLength(2)
   })
 
   it("dispatches transactional tasks through the transactional store path", async () => {

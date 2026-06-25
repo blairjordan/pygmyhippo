@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 
 import { createApp } from "./app.js"
 import {
@@ -74,6 +74,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async completeRun() {
     throw new Error("not used")
   },
+  async completeStepAttempt() {
+    throw new Error("not used")
+  },
   async consumeSignal() {
     return null
   },
@@ -99,6 +102,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
     return 0
   },
   async failRun() {
+    throw new Error("not used")
+  },
+  async failStepAttempt() {
     throw new Error("not used")
   },
   async fireDueSchedules() {
@@ -133,6 +139,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   },
   async markOutboxDelivered() {
     return true
+  },
+  async markRunCompensationFailed() {
+    return createRunRecord({ status: "compensation_failed" })
   },
   async openWait() {
     throw new Error("not used")
@@ -295,6 +304,7 @@ describe("app routes", () => {
             id: "attempt-1",
             runId: "run-1",
             stepKey: "send-email",
+            kind: "forward",
             attempt: 1,
             status: "completed",
             input: {},
@@ -552,5 +562,81 @@ describe("app routes", () => {
     })
 
     await contextApp.close()
+  })
+
+  it("runs compensation after hard terminate", async () => {
+    const run = createRunRecord({
+      id: "11111111-1111-4111-8111-222222222222",
+      status: "waiting",
+      currentStepKey: "delivery-confirmation",
+    })
+    const runCompensation = vi.fn(async () =>
+      createRunRecord({
+        id: run.id,
+        status: "canceled",
+        currentStepKey: run.currentStepKey,
+      })
+    )
+    const engine = {
+      getWorkflow() {
+        throw new Error("not used")
+      },
+      hasWorkflow() {
+        return true
+      },
+      listWorkflows() {
+        return []
+      },
+      async resumeWait() {
+        throw new Error("not used")
+      },
+      runCompensation,
+      async startRun() {
+        throw new Error("not used")
+      },
+      async tick() {
+        return null
+      },
+    }
+    const store = {
+      ...createStoreStub(),
+      async getRun() {
+        return run
+      },
+      async listChildRuns() {
+        return []
+      },
+      async requestCancelRun() {
+        return createRunRecord({
+          id: run.id,
+          status: "canceled",
+          currentStepKey: run.currentStepKey,
+          cancelRequestedAt: new Date(),
+          cancelMode: "hard",
+        })
+      },
+    }
+    const terminateApp = createApp({
+      auth: createAuth(),
+      engine,
+      metrics: createMetrics(),
+      store,
+    })
+
+    const response = await terminateApp.inject({
+      method: "POST",
+      url: `/v1/operators/runs/${run.id}/terminate`,
+      payload: { reason: "operator request" },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      runId: run.id,
+      status: "canceled",
+      currentStepKey: "delivery-confirmation",
+    })
+    expect(runCompensation).toHaveBeenCalledWith(run.id)
+
+    await terminateApp.close()
   })
 })

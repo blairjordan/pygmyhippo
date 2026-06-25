@@ -79,12 +79,14 @@ SELECT
   id,
   run_id AS "runId",
   step_key AS "stepKey",
+  kind,
   attempt,
   status,
   input,
   output,
   error,
   started_at AS "startedAt",
+  last_heartbeat_at AS "lastHeartbeatAt",
   completed_at AS "completedAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt"
@@ -153,18 +155,21 @@ RETURNING
 SELECT COALESCE(MAX(attempt), 0)::int AS "lastAttempt"
 FROM workflow_step_attempts
 WHERE run_id = :runId
-  AND step_key = :stepKey;
+  AND step_key = :stepKey
+  AND kind = :kind;
 
 /* @name InsertStepAttempt */
 INSERT INTO workflow_step_attempts (
   run_id,
   step_key,
+  kind,
   attempt,
   status,
   input
 ) VALUES (
   :runId,
   :stepKey,
+  :kind,
   :attempt,
   'started',
   :input
@@ -173,15 +178,106 @@ RETURNING
   id,
   run_id AS "runId",
   step_key AS "stepKey",
+  kind,
   attempt,
   status,
   input,
   output,
   error,
   started_at AS "startedAt",
+  last_heartbeat_at AS "lastHeartbeatAt",
   completed_at AS "completedAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt";
+
+/* @name CompleteStandaloneStepAttempt */
+UPDATE workflow_step_attempts
+SET
+  status = 'completed',
+  output = :output,
+  error = NULL,
+  completed_at = now(),
+  updated_at = now()
+WHERE id = :attemptId
+RETURNING
+  id,
+  run_id AS "runId",
+  step_key AS "stepKey",
+  kind,
+  attempt,
+  status,
+  input,
+  output,
+  error,
+  started_at AS "startedAt",
+  last_heartbeat_at AS "lastHeartbeatAt",
+  completed_at AS "completedAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt";
+
+/* @name FailStandaloneStepAttempt */
+UPDATE workflow_step_attempts
+SET
+  status = 'failed',
+  output = NULL,
+  error = :error,
+  completed_at = now(),
+  updated_at = now()
+WHERE id = :attemptId
+RETURNING
+  id,
+  run_id AS "runId",
+  step_key AS "stepKey",
+  kind,
+  attempt,
+  status,
+  input,
+  output,
+  error,
+  started_at AS "startedAt",
+  last_heartbeat_at AS "lastHeartbeatAt",
+  completed_at AS "completedAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt";
+
+/* @name MarkRunCompensationFailed */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'compensation_failed',
+    error = :error,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    updated_at = now(),
+    completed_at = now()
+  WHERE id = :runId
+    AND status IN ('failed', 'canceled', 'compensation_failed')
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, :eventType, :eventPayload
+  FROM updated_run
+)
+SELECT * FROM updated_run;
 
 /* @name CompleteRun */
 WITH updated_run AS (
@@ -720,6 +816,7 @@ SELECT
   completed_at AS "completedAt"
 FROM workflow_runs
 WHERE status = 'failed'
+   OR status = 'compensation_failed'
 ORDER BY completed_at DESC NULLS LAST, updated_at DESC
 LIMIT :limit;
 
@@ -784,7 +881,7 @@ WITH updated_run AS (
     completed_at AS "completedAt"
 ), inserted_event AS (
   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-  SELECT id, current_step_key, :eventType, :eventPayload
+  SELECT id, "currentStepKey", :eventType, :eventPayload
   FROM updated_run
 )
 SELECT * FROM updated_run;
@@ -821,7 +918,7 @@ WITH updated_run AS (
     completed_at AS "completedAt"
 ), inserted_event AS (
   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-  SELECT id, current_step_key, :eventType, :eventPayload
+  SELECT id, "currentStepKey", :eventType, :eventPayload
   FROM updated_run
 )
 SELECT * FROM updated_run;

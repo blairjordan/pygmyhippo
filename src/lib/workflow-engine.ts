@@ -1,12 +1,16 @@
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
   ChildStepResult,
+  CompensationDefinition,
+  CompensationHandler,
   SleepStepDefinition,
   StepExecutionContext,
+  TaskStepDefinition,
   TaskStepResult,
   WaitStepResumeResult,
   WorkflowDefinition,
   WorkflowRunRecord,
+  WorkflowStepAttemptRecord,
 } from "../types/workflow.js"
 import type { HippoMetrics } from "./metrics.js"
 import { LostLeaseError, type WorkflowStore } from "./workflow-store.js"
@@ -20,6 +24,11 @@ const mergeContext = (left: JsonObject, right?: JsonObject) => ({
   ...left,
   ...(right ?? {}),
 })
+
+const sleep = (delayMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs)
+  })
 
 const getDefinition = (
   definitions: Map<string, WorkflowDefinition>,
@@ -123,6 +132,14 @@ const defaultRetryBackoff = {
   jitterMs: 250,
 } as const
 
+const defaultCompensationRetryPolicy = {
+  maxAttempts: 1,
+  initialBackoffMs: 250,
+  maxBackoffMs: 1_000,
+  backoffMultiplier: 2,
+  jitterMs: 50,
+} as const
+
 const getRetryAvailableAt = (args: {
   attempt: number
   initialBackoffMs?: number
@@ -152,7 +169,10 @@ const getRetryAvailableAt = (args: {
 }
 
 const isTerminalStatus = (status: WorkflowRunRecord["status"]) =>
-  status === "completed" || status === "failed" || status === "canceled"
+  status === "completed" ||
+  status === "failed" ||
+  status === "compensation_failed" ||
+  status === "canceled"
 
 const createRetryDelayInput = (retryPolicy: {
   initialBackoffMs?: number
@@ -194,6 +214,29 @@ const getErrorTag = (error: unknown) => {
   }
 
   return null
+}
+
+const getCompensationDefinition = (
+  step: TaskStepDefinition
+): CompensationDefinition | null => {
+  if (!step.compensate) {
+    return null
+  }
+
+  if (typeof step.compensate === "function") {
+    return {
+      run: step.compensate as CompensationHandler,
+      retry: defaultCompensationRetryPolicy,
+    }
+  }
+
+  return {
+    ...step.compensate,
+    retry: {
+      ...defaultCompensationRetryPolicy,
+      ...(step.compensate.retry ?? {}),
+    },
+  }
 }
 
 const observeRunDuration = (args: {
@@ -624,6 +667,12 @@ const continueRun = async (args: {
               run: activeRun,
               status: "failed",
             })
+            activeRun = await compensateRun({
+              definitions: args.definitions,
+              metrics: args.metrics,
+              store: args.store,
+              run: activeRun,
+            })
           }
         }
 
@@ -708,6 +757,12 @@ const continueRun = async (args: {
           run: activeRun,
           status: "failed",
         })
+        activeRun = await compensateRun({
+          definitions: args.definitions,
+          metrics: args.metrics,
+          store: args.store,
+          run: activeRun,
+        })
       }
 
       args.metrics.stepAttempts.inc({
@@ -720,6 +775,153 @@ const continueRun = async (args: {
   }
 
   return activeRun
+}
+
+const compensateRun = async (args: {
+  definitions: Map<string, WorkflowDefinition>
+  metrics: HippoMetrics
+  store: WorkflowStore
+  run: WorkflowRunRecord
+}) => {
+  if (args.run.status !== "failed" && args.run.status !== "canceled") {
+    return args.run
+  }
+
+  const definition = requireDefinition(args.definitions, args.run.definitionName)
+  const attempts = await args.store.getRunAttempts(args.run.id)
+  const compensatedStepKeys = new Set(
+    attempts
+      .filter(
+        (attempt) =>
+          attempt.kind === "compensate" && attempt.status === "completed"
+      )
+      .map((attempt) => attempt.stepKey)
+  )
+  const compensatableSteps = [...attempts]
+    .reverse()
+    .flatMap((attempt) => {
+      if (
+        attempt.kind !== "forward" ||
+        attempt.status !== "completed" ||
+        compensatedStepKeys.has(attempt.stepKey)
+      ) {
+        return []
+      }
+
+      const step = definition.steps[attempt.stepKey]
+
+      if (!step || step.kind !== "task") {
+        return []
+      }
+
+      const compensation = getCompensationDefinition(step)
+
+      if (!compensation) {
+        return []
+      }
+
+      compensatedStepKeys.add(attempt.stepKey)
+
+      return [
+        {
+          stepKey: attempt.stepKey,
+          compensation,
+        },
+      ]
+    })
+  let activeRun = args.run
+
+  for (const item of compensatableSteps) {
+    const cause =
+      activeRun.error ??
+      ({
+        status: activeRun.status,
+        ...(activeRun.cancelMode === null ? {} : { mode: activeRun.cancelMode }),
+      } satisfies JsonObject)
+
+    for (;;) {
+      const compensationAttempt = await args.store.beginStepAttempt({
+        runId: activeRun.id,
+        stepKey: item.stepKey,
+        kind: "compensate",
+        input: {
+          workflow: activeRun.definitionName,
+          step: item.stepKey,
+          mode: "compensate",
+          context: activeRun.context,
+          cause,
+        },
+      })
+
+      try {
+        await Promise.resolve(
+          item.compensation.run(
+            createExecutionContext({
+              run: activeRun,
+              attempt: compensationAttempt.attempt,
+              stepKey: item.stepKey,
+              heartbeat: async () => false,
+              db: {
+                query: args.store.queryStepDatabase,
+              },
+              outbox: {
+                enqueue: async (input) => {
+                  await args.store.enqueueOutbox({
+                    runId: activeRun.id,
+                    topic: input.topic,
+                    payload: input.payload,
+                    ...(input.availableAt === undefined
+                      ? {}
+                      : { availableAt: input.availableAt }),
+                  })
+                },
+              },
+              transactional: false,
+            }),
+            cause
+          )
+        )
+        await args.store.completeStepAttempt({
+          runId: activeRun.id,
+          stepKey: item.stepKey,
+          attemptId: compensationAttempt.id,
+          output: {
+            status: "compensated",
+          },
+        })
+        break
+      } catch (error) {
+        await args.store.failStepAttempt({
+          runId: activeRun.id,
+          stepKey: item.stepKey,
+          attemptId: compensationAttempt.id,
+          error: asErrorPayload(error),
+        })
+
+        const retryPolicy =
+          item.compensation.retry ?? defaultCompensationRetryPolicy
+        const canRetry = compensationAttempt.attempt < retryPolicy.maxAttempts
+
+        if (!canRetry) {
+          activeRun = await args.store.markRunCompensationFailed({
+            runId: activeRun.id,
+            stepKey: item.stepKey,
+            error: asErrorPayload(error),
+          })
+          return activeRun
+        }
+
+        const retryAvailableAt = getRetryAvailableAt({
+          attempt: compensationAttempt.attempt,
+          ...createRetryDelayInput(retryPolicy),
+        })
+
+        await sleep(Math.max(0, retryAvailableAt.getTime() - Date.now()))
+      }
+    }
+  }
+
+  return (await args.store.getRun(activeRun.id)) ?? activeRun
 }
 
 export const createWorkflowEngine = (args: {
@@ -766,6 +968,21 @@ export const createWorkflowEngine = (args: {
       store: args.store,
       workerId,
       run: claimedRun,
+    })
+  }
+
+  const runCompensation = async (runId: string) => {
+    const run = await args.store.getRun(runId)
+
+    if (!run) {
+      return null
+    }
+
+    return compensateRun({
+      definitions,
+      metrics: args.metrics,
+      store: args.store,
+      run,
     })
   }
 
@@ -838,6 +1055,7 @@ export const createWorkflowEngine = (args: {
     hasWorkflow: (workflowName: string) => getDefinition(definitions, workflowName) !== null,
     listWorkflows: () => [...definitions.values()],
     resumeWait,
+    runCompensation,
     startRun,
     tick,
   }

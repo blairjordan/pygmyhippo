@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "hippo": "./bin/hippo.js"
+  },
   "description": "Durable workflow engine with Postgres-backed execution state",
   "engines": {
     "node": ">=20.0.0"
@@ -10,6 +13,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "hippo:dev": "tsx scripts/hippo-dev.ts",
+    "hippo:init": "node ./bin/hippo.js init",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",

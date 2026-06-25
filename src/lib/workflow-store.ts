@@ -1,39 +1,38 @@
 import type { Pool, PoolClient } from "pg"
 
 import {
-  advanceTaskStepQuery,
-  cancelRunQuery,
-  claimNextRunnableRunQuery,
-  completeRunQuery,
-  completeWaitResumeQuery,
-  consumeSignalQuery,
-  countOpenWaitsQuery,
-  createSignalQuery,
-  extendLeaseQuery,
-  expireOpenWaitsQuery,
-  failRunQuery,
-  getLastStepAttemptQuery,
-  getOpenWaitForUpdateQuery,
-  getRunByIdForUpdateQuery,
-  getRunByIdQuery,
-  getRunAttemptsQuery,
-  getRunEventsQuery,
-  insertEventQuery,
-  insertRunQuery,
-  insertStepAttemptQuery,
-  listActiveRunsQuery,
-  listFailedRunsQuery,
-  listStuckRunsQuery,
-  openWaitQuery,
-  pingQuery,
-  recoverExpiredLeasesQuery,
-  retryRunQuery,
-  scheduleRetryQuery,
-  scheduleSleepQuery,
-  type IAttemptRow,
-  type IEventRow,
-  type IRunRow,
-  type IWaitRow,
+  advanceTaskStep as advanceTaskStepQuery,
+  cancelRun as cancelRunQuery,
+  claimNextRunnableRun as claimNextRunnableRunQuery,
+  completeRun as completeRunQuery,
+  completeStandaloneStepAttempt as completeStandaloneStepAttemptQuery,
+  completeWaitResume as completeWaitResumeQuery,
+  consumeSignal as consumeSignalQuery,
+  countOpenWaits as countOpenWaitsQuery,
+  createSignal as createSignalQuery,
+  extendLease as extendLeaseQuery,
+  expireOpenWaits as expireOpenWaitsQuery,
+  failRun as failRunQuery,
+  failStandaloneStepAttempt as failStandaloneStepAttemptQuery,
+  getLastStepAttempt as getLastStepAttemptQuery,
+  getOpenWaitForUpdate as getOpenWaitForUpdateQuery,
+  getRunById as getRunByIdQuery,
+  getRunByIdForUpdate as getRunByIdForUpdateQuery,
+  getRunAttempts as getRunAttemptsQuery,
+  getRunEvents as getRunEventsQuery,
+  insertEvent as insertEventQuery,
+  insertRun as insertRunQuery,
+  insertStepAttempt as insertStepAttemptQuery,
+  listActiveRuns as listActiveRunsQuery,
+  listFailedRuns as listFailedRunsQuery,
+  listStuckRuns as listStuckRunsQuery,
+  markRunCompensationFailed as markRunCompensationFailedQuery,
+  openWait as openWaitQuery,
+  ping as pingQuery,
+  recoverExpiredLeases as recoverExpiredLeasesQuery,
+  retryRun as retryRunQuery,
+  scheduleRetry as scheduleRetryQuery,
+  scheduleSleep as scheduleSleepQuery,
 } from "../queries/workflow-store.queries.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
@@ -43,6 +42,7 @@ import type {
   WorkflowCancelMode,
   WorkflowOutboxRecord,
   SignalRecord,
+  StepAttemptKind,
   StepAttemptStatus,
   WorkflowEventRecord,
   WorkflowRunRecord,
@@ -53,6 +53,69 @@ import type {
 } from "../types/workflow.js"
 import type { Database } from "./db.js"
 import { withTransaction } from "./db.js"
+
+type IRunRow = {
+  id: string
+  parentRunId?: string | null
+  parentStepKey?: string | null
+  definitionName: string
+  definitionVersion: number
+  status: string
+  currentStepKey: string | null
+  input: JsonValue
+  context: JsonValue
+  result: JsonValue | null
+  error: JsonValue | null
+  leaseOwner: string | null
+  leaseExpiresAt: Date | null
+  cancelRequestedAt?: Date | null
+  cancelMode?: string | null
+  availableAt: Date
+  createdAt: Date
+  updatedAt: Date
+  completedAt: Date | null
+}
+
+type IAttemptRow = {
+  id: string
+  runId: string
+  stepKey: string
+  kind: StepAttemptKind
+  attempt: number
+  status: string
+  input: JsonValue
+  output: JsonValue | null
+  error: JsonValue | null
+  startedAt: Date
+  lastHeartbeatAt?: Date | null
+  completedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+type IWaitRow = {
+  id: string
+  runId: string
+  stepKey: string
+  correlationKey: string
+  status: "open" | "resumed" | "expired" | "canceled"
+  payload: JsonValue | null
+  resumePayload: JsonValue | null
+  resumeOutput: JsonValue | null
+  expiresAt?: Date | null
+  createdAt: Date
+  updatedAt: Date
+  resumedAt: Date | null
+}
+
+type IEventRow = {
+  id: number | string
+  runId: string
+  stepKey: string | null
+  eventType: string
+  payload: JsonValue
+  createdAt: Date
+}
 
 const requireRow = <T>(row: T | undefined, message: string): T => {
   if (!row) {
@@ -88,6 +151,7 @@ const mapRun = (row: IRunRow): WorkflowRunRecord => ({
 
 const mapAttempt = (row: IAttemptRow): WorkflowStepAttemptRecord => ({
   ...row,
+  kind: row.kind as StepAttemptKind,
   status: row.status as StepAttemptStatus,
   input: assertJsonObject(row.input, "Attempt input must be a JSON object"),
   output: row.output,
@@ -118,6 +182,7 @@ const mapSignal = (row: {
 
 const mapEvent = (row: IEventRow): WorkflowEventRecord => ({
   ...row,
+  id: Number(row.id),
   payload: assertJsonObject(row.payload, "Event payload must be a JSON object"),
 })
 
@@ -126,11 +191,12 @@ const insertAttempt = async (
   args: {
     runId: string
     stepKey: string
+    kind: StepAttemptKind
     input: JsonObject
   }
 ) => {
   const [countRow] = await getLastStepAttemptQuery.run(
-    { runId: args.runId, stepKey: args.stepKey },
+    { runId: args.runId, stepKey: args.stepKey, kind: args.kind },
     client
   )
   const attempt = (countRow?.lastAttempt ?? 0) + 1
@@ -138,6 +204,7 @@ const insertAttempt = async (
     {
       runId: args.runId,
       stepKey: args.stepKey,
+      kind: args.kind,
       attempt,
       input: args.input,
     },
@@ -440,8 +507,77 @@ export const createWorkflowStore = (
   const beginStepAttempt = async (args: {
     runId: string
     stepKey: string
+    kind?: StepAttemptKind
     input: JsonObject
-  }) => withTransaction(db, (client) => insertAttempt(client, args))
+  }) =>
+    withTransaction(db, (client) =>
+      insertAttempt(client, {
+        ...args,
+        kind: args.kind ?? "forward",
+      })
+    )
+
+  const completeStepAttempt = async (args: {
+    runId: string
+    stepKey: string
+    attemptId: string
+    output: JsonValue | null
+  }) => {
+    const [row] = await completeStandaloneStepAttemptQuery.run(
+      {
+        attemptId: args.attemptId,
+        output: args.output,
+      },
+      db
+    )
+
+    if (!row) {
+      throw new Error(`Failed to complete step attempt "${args.attemptId}"`)
+    }
+
+    await insertEventQuery.run(
+      {
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: "compensation.completed",
+        payload: {},
+      },
+      db
+    )
+    await notifyRunEvent(args.runId)
+    return mapAttempt(row)
+  }
+
+  const failStepAttempt = async (args: {
+    runId: string
+    stepKey: string
+    attemptId: string
+    error: JsonObject
+  }) => {
+    const [row] = await failStandaloneStepAttemptQuery.run(
+      {
+        attemptId: args.attemptId,
+        error: args.error,
+      },
+      db
+    )
+
+    if (!row) {
+      throw new Error(`Failed to fail step attempt "${args.attemptId}"`)
+    }
+
+    await insertEventQuery.run(
+      {
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: "compensation.failed",
+        payload: args.error,
+      },
+      db
+    )
+    await notifyRunEvent(args.runId)
+    return mapAttempt(row)
+  }
 
   const completeRun = async (args: {
     runId: string
@@ -570,6 +706,33 @@ export const createWorkflowStore = (
 
     if (!row) {
       throw new LostLeaseError("Failed to mark run failed under active lease")
+    }
+
+    const run = mapRun(row)
+    await notifyRunEvent(run.id)
+    return run
+  }
+
+  const markRunCompensationFailed = async (args: {
+    runId: string
+    stepKey: string
+    error: JsonObject
+  }) => {
+    const [row] = await markRunCompensationFailedQuery.run(
+      {
+        runId: args.runId,
+        stepKey: args.stepKey,
+        error: args.error,
+        eventType: "run.compensation_failed",
+        eventPayload: args.error,
+      },
+      db
+    )
+
+    if (!row) {
+      throw new Error(
+        `Failed to mark run "${args.runId}" compensation failure state`
+      )
     }
 
     const run = mapRun(row)
@@ -748,7 +911,7 @@ export const createWorkflowStore = (
 
   const countOpenWaits = async () => {
     const [row] = await countOpenWaitsQuery.run(undefined, db)
-    return requireRow(row, "Failed to count open waits").waitCount
+    return requireRow(row, "Failed to count open waits").waitCount ?? 0
   }
 
   const extendLease = async (args: {
@@ -764,7 +927,7 @@ export const createWorkflowStore = (
 
   const expireOpenWaits = async (args: { limit: number }) => {
     const [row] = await expireOpenWaitsQuery.run(args, db)
-    return requireRow(row, "Failed to expire open waits").expiredCount
+    return requireRow(row, "Failed to expire open waits").expiredCount ?? 0
   }
 
   const createSignal = async (args: {
@@ -1410,6 +1573,7 @@ export const createWorkflowStore = (
       const attempt = await insertAttempt(client, {
         runId: args.run.id,
         stepKey: args.stepKey,
+        kind: "forward",
         input: {
           workflow: lockedRun.definitionName,
           step: args.stepKey,
@@ -1765,7 +1929,7 @@ export const createWorkflowStore = (
     const reclaimed = requireRow(
       row,
       "Failed to recover expired leases"
-    ).reclaimedCount
+    ).reclaimedCount ?? 0
 
     if (reclaimed > 0) {
       await notifyRunnable()
@@ -1781,6 +1945,7 @@ export const createWorkflowStore = (
     cancelRunAtBoundary,
     claimNextRunnableRun,
     claimOutboxMessages,
+    completeStepAttempt,
     completeRun,
     countOpenWaits,
     createSchedule,
@@ -1790,6 +1955,7 @@ export const createWorkflowStore = (
     extendLease,
     executeTransactionalTask,
     expireOpenWaits,
+    failStepAttempt,
     failRun,
     fireDueSchedules,
     getChildRun,
@@ -1804,6 +1970,7 @@ export const createWorkflowStore = (
     listSchedules,
     listStuckRuns,
     markOutboxDelivered,
+    markRunCompensationFailed,
     queryStepDatabase,
     recoverExpiredLeases,
     requestCancelRun,

@@ -53,6 +53,18 @@ Transactional steps can enqueue outbox records in the same transaction as step p
 
 ## Quickstart
 
+Scaffold a new Hippo app:
+
+```bash
+npx hippo init my-hippo-app
+cd my-hippo-app
+npm install
+npm run hippo:dev
+```
+
+This creates a local app skeleton with Docker-backed Postgres, the built-in
+dashboard, and an example workflow under `src/workflows/example.ts`.
+
 Required environment:
 
 - `DATABASE_URL`

@@ -22,6 +22,9 @@ describe("worker loop", () => {
       listWorkflows() {
         return []
       },
+      async runCompensation() {
+        return null
+      },
       async resumeWait() {
         throw new Error("not used")
       },
@@ -59,6 +62,9 @@ describe("worker loop", () => {
       },
       listWorkflows() {
         return []
+      },
+      async runCompensation() {
+        return null
       },
       async resumeWait() {
         throw new Error("not used")

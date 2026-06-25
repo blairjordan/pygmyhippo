@@ -46,6 +46,9 @@ describe("scheduler", () => {
       listWorkflows() {
         return []
       },
+      async runCompensation() {
+        return null
+      },
       async resumeWait() {
         throw new Error("not used")
       },
