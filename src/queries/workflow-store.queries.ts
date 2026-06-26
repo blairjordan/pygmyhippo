@@ -2952,3 +2952,1633 @@ const pingIR: any = {"usedParamSet":{},"params":[],"statement":"SELECT 1::int AS
  */
 export const ping = new PreparedQuery<IPingParams,IPingResult>(pingIR);
 
+
+/** 'StartRunIdempotent' parameters type */
+export interface IStartRunIdempotentParams {
+  currentStepKey?: string | null | void;
+  definitionName?: string | null | void;
+  definitionVersion?: number | null | void;
+  idempotencyKey?: string | null | void;
+  input?: Json | null | void;
+  parentRunId?: string | null | void;
+  parentStepKey?: string | null | void;
+  priority?: number | null | void;
+  taskQueue?: string | null | void;
+}
+
+/** 'StartRunIdempotent' return type */
+export interface IStartRunIdempotentResult {
+  availableAt: Date | null;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json | null;
+  continuedFromRunId: string | null;
+  createdAt: Date | null;
+  currentStepKey: string | null;
+  definitionName: string | null;
+  definitionVersion: number | null;
+  error: Json | null;
+  id: string | null;
+  input: Json | null;
+  inserted: boolean | null;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number | null;
+  result: Json | null;
+  status: workflow_run_status | null;
+  supersededByRunId: string | null;
+  taskQueue: string | null;
+  updatedAt: Date | null;
+}
+
+/** 'StartRunIdempotent' query type */
+export interface IStartRunIdempotentQuery {
+  params: IStartRunIdempotentParams;
+  result: IStartRunIdempotentResult;
+}
+
+const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempotencyKey":true,"parentRunId":true,"parentStepKey":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true},"params":[{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":977,"b":991},{"a":1334,"b":1348}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1019,"b":1033},{"a":1466,"b":1480}]},{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1296,"b":1307}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1314,"b":1327}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":1355,"b":1372}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":1379,"b":1388}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":1395,"b":1403}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1445,"b":1459}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":1487,"b":1492}]}],"statement":"WITH existing_run AS (\n  SELECT\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    FALSE AS inserted\n  FROM workflow_runs\n  WHERE definition_name = :definitionName\n    AND idempotency_key = :idempotencyKey\n), inserted_run AS (\n  INSERT INTO workflow_runs (\n    parent_run_id,\n    parent_step_key,\n    definition_name,\n    definition_version,\n    task_queue,\n    priority,\n    status,\n    current_step_key,\n    idempotency_key,\n    input,\n    context\n  )\n  SELECT\n    :parentRunId,\n    :parentStepKey,\n    :definitionName,\n    :definitionVersion,\n    :taskQueue,\n    :priority,\n    'queued'::workflow_run_status,\n    :currentStepKey,\n    :idempotencyKey,\n    :input,\n    '{}'::jsonb\n  WHERE NOT EXISTS (SELECT 1 FROM existing_run)\n  ON CONFLICT (definition_name, idempotency_key) DO NOTHING\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    TRUE AS inserted\n)\nSELECT * FROM inserted_run\nUNION ALL\nSELECT * FROM existing_run\nLIMIT 1"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH existing_run AS (
+ *   SELECT
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt",
+ *     FALSE AS inserted
+ *   FROM workflow_runs
+ *   WHERE definition_name = :definitionName
+ *     AND idempotency_key = :idempotencyKey
+ * ), inserted_run AS (
+ *   INSERT INTO workflow_runs (
+ *     parent_run_id,
+ *     parent_step_key,
+ *     definition_name,
+ *     definition_version,
+ *     task_queue,
+ *     priority,
+ *     status,
+ *     current_step_key,
+ *     idempotency_key,
+ *     input,
+ *     context
+ *   )
+ *   SELECT
+ *     :parentRunId,
+ *     :parentStepKey,
+ *     :definitionName,
+ *     :definitionVersion,
+ *     :taskQueue,
+ *     :priority,
+ *     'queued'::workflow_run_status,
+ *     :currentStepKey,
+ *     :idempotencyKey,
+ *     :input,
+ *     '{}'::jsonb
+ *   WHERE NOT EXISTS (SELECT 1 FROM existing_run)
+ *   ON CONFLICT (definition_name, idempotency_key) DO NOTHING
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt",
+ *     TRUE AS inserted
+ * )
+ * SELECT * FROM inserted_run
+ * UNION ALL
+ * SELECT * FROM existing_run
+ * LIMIT 1
+ * ```
+ */
+export const startRunIdempotent = new PreparedQuery<IStartRunIdempotentParams,IStartRunIdempotentResult>(startRunIdempotentIR);
+
+
+/** 'GetRunByDefinitionAndIdempotencyKey' parameters type */
+export interface IGetRunByDefinitionAndIdempotencyKeyParams {
+  definitionName?: string | null | void;
+  idempotencyKey?: string | null | void;
+}
+
+/** 'GetRunByDefinitionAndIdempotencyKey' return type */
+export interface IGetRunByDefinitionAndIdempotencyKeyResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'GetRunByDefinitionAndIdempotencyKey' query type */
+export interface IGetRunByDefinitionAndIdempotencyKeyQuery {
+  params: IGetRunByDefinitionAndIdempotencyKeyParams;
+  result: IGetRunByDefinitionAndIdempotencyKeyResult;
+}
+
+const getRunByDefinitionAndIdempotencyKeyIR: any = {"usedParamSet":{"definitionName":true,"idempotencyKey":true},"params":[{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":873,"b":887}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":913,"b":927}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\"\nFROM workflow_runs\nWHERE definition_name = :definitionName\n  AND idempotency_key = :idempotencyKey\nLIMIT 1"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   parent_run_id AS "parentRunId",
+ *   parent_step_key AS "parentStepKey",
+ *   continued_from_run_id AS "continuedFromRunId",
+ *   branched_from_run_id AS "branchedFromRunId",
+ *   branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *   branched_from_attempt_id AS "branchedFromAttemptId",
+ *   superseded_by_run_id AS "supersededByRunId",
+ *   definition_name AS "definitionName",
+ *   definition_version AS "definitionVersion",
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   status,
+ *   current_step_key AS "currentStepKey",
+ *   input,
+ *   context,
+ *   result,
+ *   error,
+ *   lease_owner AS "leaseOwner",
+ *   lease_expires_at AS "leaseExpiresAt",
+ *   cancel_requested_at AS "cancelRequestedAt",
+ *   cancel_mode AS "cancelMode",
+ *   available_at AS "availableAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   completed_at AS "completedAt"
+ * FROM workflow_runs
+ * WHERE definition_name = :definitionName
+ *   AND idempotency_key = :idempotencyKey
+ * LIMIT 1
+ * ```
+ */
+export const getRunByDefinitionAndIdempotencyKey = new PreparedQuery<IGetRunByDefinitionAndIdempotencyKeyParams,IGetRunByDefinitionAndIdempotencyKeyResult>(getRunByDefinitionAndIdempotencyKeyIR);
+
+
+/** 'ContinueAsNewCompleteSource' parameters type */
+export interface IContinueAsNewCompleteSourceParams {
+  context?: Json | null | void;
+  runId?: string | null | void;
+  stepKey?: string | null | void;
+  workerId?: string | null | void;
+}
+
+/** 'ContinueAsNewCompleteSource' return type */
+export interface IContinueAsNewCompleteSourceResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'ContinueAsNewCompleteSource' query type */
+export interface IContinueAsNewCompleteSourceQuery {
+  params: IContinueAsNewCompleteSourceParams;
+  result: IContinueAsNewCompleteSourceResult;
+}
+
+const continueAsNewCompleteSourceIR: any = {"usedParamSet":{"context":true,"runId":true,"stepKey":true,"workerId":true},"params":[{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":88,"b":95}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":260,"b":265}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":292,"b":299}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":321,"b":329}]}],"statement":"UPDATE workflow_runs\nSET\n  status = 'completed',\n  current_step_key = NULL,\n  context = :context,\n  result = NULL,\n  error = NULL,\n  lease_owner = NULL,\n  lease_expires_at = NULL,\n  available_at = now(),\n  updated_at = now(),\n  completed_at = now()\nWHERE id = :runId\n  AND current_step_key = :stepKey\n  AND lease_owner = :workerId\n  AND lease_expires_at >= now()\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * UPDATE workflow_runs
+ * SET
+ *   status = 'completed',
+ *   current_step_key = NULL,
+ *   context = :context,
+ *   result = NULL,
+ *   error = NULL,
+ *   lease_owner = NULL,
+ *   lease_expires_at = NULL,
+ *   available_at = now(),
+ *   updated_at = now(),
+ *   completed_at = now()
+ * WHERE id = :runId
+ *   AND current_step_key = :stepKey
+ *   AND lease_owner = :workerId
+ *   AND lease_expires_at >= now()
+ * RETURNING
+ *   id,
+ *   parent_run_id AS "parentRunId",
+ *   parent_step_key AS "parentStepKey",
+ *   continued_from_run_id AS "continuedFromRunId",
+ *   branched_from_run_id AS "branchedFromRunId",
+ *   branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *   branched_from_attempt_id AS "branchedFromAttemptId",
+ *   superseded_by_run_id AS "supersededByRunId",
+ *   definition_name AS "definitionName",
+ *   definition_version AS "definitionVersion",
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   status,
+ *   current_step_key AS "currentStepKey",
+ *   input,
+ *   context,
+ *   result,
+ *   error,
+ *   lease_owner AS "leaseOwner",
+ *   lease_expires_at AS "leaseExpiresAt",
+ *   cancel_requested_at AS "cancelRequestedAt",
+ *   cancel_mode AS "cancelMode",
+ *   available_at AS "availableAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   completed_at AS "completedAt"
+ * ```
+ */
+export const continueAsNewCompleteSource = new PreparedQuery<IContinueAsNewCompleteSourceParams,IContinueAsNewCompleteSourceResult>(continueAsNewCompleteSourceIR);
+
+
+/** 'ContinueAsNewInsertRun' parameters type */
+export interface IContinueAsNewInsertRunParams {
+  continuedFromRunId?: string | null | void;
+  currentStepKey?: string | null | void;
+  definitionName?: string | null | void;
+  definitionVersion?: number | null | void;
+  input?: Json | null | void;
+  priority?: number | null | void;
+  taskQueue?: string | null | void;
+}
+
+/** 'ContinueAsNewInsertRun' return type */
+export interface IContinueAsNewInsertRunResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'ContinueAsNewInsertRun' query type */
+export interface IContinueAsNewInsertRunQuery {
+  params: IContinueAsNewInsertRunParams;
+  result: IContinueAsNewInsertRunResult;
+}
+
+const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true},"params":[{"name":"continuedFromRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":182,"b":200}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":205,"b":219}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":224,"b":241}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":246,"b":255}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":260,"b":268}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":285,"b":299}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":304,"b":309}]}],"statement":"INSERT INTO workflow_runs (\n  continued_from_run_id,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  input,\n  context\n) VALUES (\n  :continuedFromRunId,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :input,\n  '{}'::jsonb\n)\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * INSERT INTO workflow_runs (
+ *   continued_from_run_id,
+ *   definition_name,
+ *   definition_version,
+ *   task_queue,
+ *   priority,
+ *   status,
+ *   current_step_key,
+ *   input,
+ *   context
+ * ) VALUES (
+ *   :continuedFromRunId,
+ *   :definitionName,
+ *   :definitionVersion,
+ *   :taskQueue,
+ *   :priority,
+ *   'queued',
+ *   :currentStepKey,
+ *   :input,
+ *   '{}'::jsonb
+ * )
+ * RETURNING
+ *   id,
+ *   parent_run_id AS "parentRunId",
+ *   parent_step_key AS "parentStepKey",
+ *   continued_from_run_id AS "continuedFromRunId",
+ *   branched_from_run_id AS "branchedFromRunId",
+ *   branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *   branched_from_attempt_id AS "branchedFromAttemptId",
+ *   superseded_by_run_id AS "supersededByRunId",
+ *   definition_name AS "definitionName",
+ *   definition_version AS "definitionVersion",
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   status,
+ *   current_step_key AS "currentStepKey",
+ *   input,
+ *   context,
+ *   result,
+ *   error,
+ *   lease_owner AS "leaseOwner",
+ *   lease_expires_at AS "leaseExpiresAt",
+ *   cancel_requested_at AS "cancelRequestedAt",
+ *   cancel_mode AS "cancelMode",
+ *   available_at AS "availableAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   completed_at AS "completedAt"
+ * ```
+ */
+export const continueAsNewInsertRun = new PreparedQuery<IContinueAsNewInsertRunParams,IContinueAsNewInsertRunResult>(continueAsNewInsertRunIR);
+
+
+/** 'ContinueAsNewSetResult' parameters type */
+export interface IContinueAsNewSetResultParams {
+  continuedRunId?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'ContinueAsNewSetResult' return type */
+export type IContinueAsNewSetResultResult = void;
+
+/** 'ContinueAsNewSetResult' query type */
+export interface IContinueAsNewSetResultQuery {
+  params: IContinueAsNewSetResultParams;
+  result: IContinueAsNewSetResultResult;
+}
+
+const continueAsNewSetResultIR: any = {"usedParamSet":{"continuedRunId":true,"runId":true},"params":[{"name":"continuedRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":73,"b":87}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":129,"b":134}]}],"statement":"UPDATE workflow_runs\nSET\n  result = jsonb_build_object('continuedRunId', :continuedRunId::text),\n  updated_at = now()\nWHERE id = :runId"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * UPDATE workflow_runs
+ * SET
+ *   result = jsonb_build_object('continuedRunId', :continuedRunId::text),
+ *   updated_at = now()
+ * WHERE id = :runId
+ * ```
+ */
+export const continueAsNewSetResult = new PreparedQuery<IContinueAsNewSetResultParams,IContinueAsNewSetResultResult>(continueAsNewSetResultIR);
+
+
+/** 'ContinueAsNewCompleteAttempt' parameters type */
+export interface IContinueAsNewCompleteAttemptParams {
+  attemptId?: string | null | void;
+  continuedRunId?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'ContinueAsNewCompleteAttempt' return type */
+export type IContinueAsNewCompleteAttemptResult = void;
+
+/** 'ContinueAsNewCompleteAttempt' query type */
+export interface IContinueAsNewCompleteAttemptQuery {
+  params: IContinueAsNewCompleteAttemptParams;
+  result: IContinueAsNewCompleteAttemptResult;
+}
+
+const continueAsNewCompleteAttemptIR: any = {"usedParamSet":{"continuedRunId":true,"attemptId":true,"runId":true},"params":[{"name":"continuedRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":106,"b":120}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":202,"b":211}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":228,"b":233}]}],"statement":"UPDATE workflow_step_attempts\nSET\n  status = 'completed',\n  output = jsonb_build_object('continuedRunId', :continuedRunId::text),\n  error = NULL,\n  completed_at = now(),\n  updated_at = now()\nWHERE id = :attemptId\n  AND run_id = :runId"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * UPDATE workflow_step_attempts
+ * SET
+ *   status = 'completed',
+ *   output = jsonb_build_object('continuedRunId', :continuedRunId::text),
+ *   error = NULL,
+ *   completed_at = now(),
+ *   updated_at = now()
+ * WHERE id = :attemptId
+ *   AND run_id = :runId
+ * ```
+ */
+export const continueAsNewCompleteAttempt = new PreparedQuery<IContinueAsNewCompleteAttemptParams,IContinueAsNewCompleteAttemptResult>(continueAsNewCompleteAttemptIR);
+
+
+/** 'GetChildRun' parameters type */
+export interface IGetChildRunParams {
+  parentRunId?: string | null | void;
+  parentStepKey?: string | null | void;
+}
+
+/** 'GetChildRun' return type */
+export interface IGetChildRunResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'GetChildRun' query type */
+export interface IGetChildRunQuery {
+  params: IGetChildRunParams;
+  result: IGetChildRunResult;
+}
+
+const getChildRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":true},"params":[{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":871,"b":882}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":908,"b":921}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\"\nFROM workflow_runs\nWHERE parent_run_id = :parentRunId\n  AND parent_step_key = :parentStepKey\nORDER BY created_at ASC\nLIMIT 1"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   parent_run_id AS "parentRunId",
+ *   parent_step_key AS "parentStepKey",
+ *   continued_from_run_id AS "continuedFromRunId",
+ *   branched_from_run_id AS "branchedFromRunId",
+ *   branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *   branched_from_attempt_id AS "branchedFromAttemptId",
+ *   superseded_by_run_id AS "supersededByRunId",
+ *   definition_name AS "definitionName",
+ *   definition_version AS "definitionVersion",
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   status,
+ *   current_step_key AS "currentStepKey",
+ *   input,
+ *   context,
+ *   result,
+ *   error,
+ *   lease_owner AS "leaseOwner",
+ *   lease_expires_at AS "leaseExpiresAt",
+ *   cancel_requested_at AS "cancelRequestedAt",
+ *   cancel_mode AS "cancelMode",
+ *   available_at AS "availableAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   completed_at AS "completedAt"
+ * FROM workflow_runs
+ * WHERE parent_run_id = :parentRunId
+ *   AND parent_step_key = :parentStepKey
+ * ORDER BY created_at ASC
+ * LIMIT 1
+ * ```
+ */
+export const getChildRun = new PreparedQuery<IGetChildRunParams,IGetChildRunResult>(getChildRunIR);
+
+
+/** 'ListChildRuns' parameters type */
+export interface IListChildRunsParams {
+  parentRunId?: string | null | void;
+}
+
+/** 'ListChildRuns' return type */
+export interface IListChildRunsResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'ListChildRuns' query type */
+export interface IListChildRunsQuery {
+  params: IListChildRunsParams;
+  result: IListChildRunsResult;
+}
+
+const listChildRunsIR: any = {"usedParamSet":{"parentRunId":true},"params":[{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":871,"b":882}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\"\nFROM workflow_runs\nWHERE parent_run_id = :parentRunId\nORDER BY created_at ASC"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   parent_run_id AS "parentRunId",
+ *   parent_step_key AS "parentStepKey",
+ *   continued_from_run_id AS "continuedFromRunId",
+ *   branched_from_run_id AS "branchedFromRunId",
+ *   branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *   branched_from_attempt_id AS "branchedFromAttemptId",
+ *   superseded_by_run_id AS "supersededByRunId",
+ *   definition_name AS "definitionName",
+ *   definition_version AS "definitionVersion",
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   status,
+ *   current_step_key AS "currentStepKey",
+ *   input,
+ *   context,
+ *   result,
+ *   error,
+ *   lease_owner AS "leaseOwner",
+ *   lease_expires_at AS "leaseExpiresAt",
+ *   cancel_requested_at AS "cancelRequestedAt",
+ *   cancel_mode AS "cancelMode",
+ *   available_at AS "availableAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   completed_at AS "completedAt"
+ * FROM workflow_runs
+ * WHERE parent_run_id = :parentRunId
+ * ORDER BY created_at ASC
+ * ```
+ */
+export const listChildRuns = new PreparedQuery<IListChildRunsParams,IListChildRunsResult>(listChildRunsIR);
+
+
+/** 'WakeParentForChild' parameters type */
+export interface IWakeParentForChildParams {
+  correlationKey?: string | null | void;
+  payload?: Json | null | void;
+}
+
+/** 'WakeParentForChild' return type */
+export interface IWakeParentForChildResult {
+  runId: string;
+}
+
+/** 'WakeParentForChild' query type */
+export interface IWakeParentForChildQuery {
+  params: IWakeParentForChildParams;
+  result: IWakeParentForChildResult;
+}
+
+const wakeParentForChildIR: any = {"usedParamSet":{"payload":true,"correlationKey":true},"params":[{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":105},{"a":680,"b":687}]},{"name":"correlationKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":181,"b":195}]}],"statement":"WITH updated_wait AS (\n  UPDATE workflow_waits\n  SET\n    status = 'resumed',\n    resume_payload = :payload,\n    resumed_at = now(),\n    updated_at = now()\n  WHERE correlation_key = :correlationKey\n    AND status = 'open'\n  RETURNING run_id AS \"runId\", step_key AS \"stepKey\"\n), updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'queued',\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id IN (SELECT \"runId\" FROM updated_wait)\n    AND status = 'waiting'\n  RETURNING id\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT \"runId\", \"stepKey\", 'child.completed', :payload\n  FROM updated_wait\n  WHERE EXISTS (SELECT 1 FROM updated_run)\n)\nSELECT id AS \"runId\"\nFROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_wait AS (
+ *   UPDATE workflow_waits
+ *   SET
+ *     status = 'resumed',
+ *     resume_payload = :payload,
+ *     resumed_at = now(),
+ *     updated_at = now()
+ *   WHERE correlation_key = :correlationKey
+ *     AND status = 'open'
+ *   RETURNING run_id AS "runId", step_key AS "stepKey"
+ * ), updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'queued',
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = now(),
+ *     updated_at = now()
+ *   WHERE id IN (SELECT "runId" FROM updated_wait)
+ *     AND status = 'waiting'
+ *   RETURNING id
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT "runId", "stepKey", 'child.completed', :payload
+ *   FROM updated_wait
+ *   WHERE EXISTS (SELECT 1 FROM updated_run)
+ * )
+ * SELECT id AS "runId"
+ * FROM updated_run
+ * ```
+ */
+export const wakeParentForChild = new PreparedQuery<IWakeParentForChildParams,IWakeParentForChildResult>(wakeParentForChildIR);
+
+
+/** 'RequestCancelRun' parameters type */
+export interface IRequestCancelRunParams {
+  eventPayload?: Json | null | void;
+  eventType?: string | null | void;
+  mode?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'RequestCancelRun' return type */
+export interface IRequestCancelRunResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'RequestCancelRun' query type */
+export interface IRequestCancelRunQuery {
+  params: IRequestCancelRunParams;
+  result: IRequestCancelRunResult;
+}
+
+const requestCancelRunIR: any = {"usedParamSet":{"mode":true,"runId":true,"eventType":true,"eventPayload":true},"params":[{"name":"mode","required":false,"transform":{"type":"scalar"},"locs":[{"a":102,"b":106},{"a":138,"b":142},{"a":376,"b":380},{"a":456,"b":460},{"a":593,"b":597},{"a":1716,"b":1720}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":685,"b":690}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":2004,"b":2013}]},{"name":"eventPayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":2016,"b":2028}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    cancel_requested_at = now(),\n    cancel_mode = :mode,\n    status = CASE\n      WHEN :mode = 'hard' THEN 'canceled'::workflow_run_status\n      WHEN status = 'waiting' THEN 'queued'::workflow_run_status\n      WHEN status = 'failed' THEN 'canceled'::workflow_run_status\n      ELSE status\n    END,\n    lease_owner = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_owner END,\n    lease_expires_at = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_expires_at END,\n    available_at = now(),\n    updated_at = now(),\n    completed_at = CASE\n      WHEN :mode = 'hard' OR status = 'failed' THEN now()\n      ELSE completed_at\n    END\n  WHERE id = :runId\n    AND status IN ('queued', 'running', 'waiting', 'failed')\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), canceled_waits AS (\n  UPDATE workflow_waits\n  SET\n    status = CASE WHEN :mode = 'hard' THEN 'canceled'::workflow_wait_status ELSE status END,\n    updated_at = now()\n  WHERE run_id IN (SELECT id FROM updated_run)\n    AND status = 'open'\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, \"currentStepKey\", :eventType, :eventPayload\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     cancel_requested_at = now(),
+ *     cancel_mode = :mode,
+ *     status = CASE
+ *       WHEN :mode = 'hard' THEN 'canceled'::workflow_run_status
+ *       WHEN status = 'waiting' THEN 'queued'::workflow_run_status
+ *       WHEN status = 'failed' THEN 'canceled'::workflow_run_status
+ *       ELSE status
+ *     END,
+ *     lease_owner = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_owner END,
+ *     lease_expires_at = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_expires_at END,
+ *     available_at = now(),
+ *     updated_at = now(),
+ *     completed_at = CASE
+ *       WHEN :mode = 'hard' OR status = 'failed' THEN now()
+ *       ELSE completed_at
+ *     END
+ *   WHERE id = :runId
+ *     AND status IN ('queued', 'running', 'waiting', 'failed')
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt"
+ * ), canceled_waits AS (
+ *   UPDATE workflow_waits
+ *   SET
+ *     status = CASE WHEN :mode = 'hard' THEN 'canceled'::workflow_wait_status ELSE status END,
+ *     updated_at = now()
+ *   WHERE run_id IN (SELECT id FROM updated_run)
+ *     AND status = 'open'
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, "currentStepKey", :eventType, :eventPayload
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const requestCancelRun = new PreparedQuery<IRequestCancelRunParams,IRequestCancelRunResult>(requestCancelRunIR);
+
+
+/** 'CancelRunAtBoundary' parameters type */
+export interface ICancelRunAtBoundaryParams {
+  mode?: string | null | void;
+  runId?: string | null | void;
+  stepKey?: string | null | void;
+  workerId?: string | null | void;
+}
+
+/** 'CancelRunAtBoundary' return type */
+export interface ICancelRunAtBoundaryResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'CancelRunAtBoundary' query type */
+export interface ICancelRunAtBoundaryQuery {
+  params: ICancelRunAtBoundaryParams;
+  result: ICancelRunAtBoundaryResult;
+}
+
+const cancelRunAtBoundaryIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"workerId":true,"mode":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":217,"b":222}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":251,"b":258},{"a":1531,"b":1538}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":282,"b":290}]},{"name":"mode","required":false,"transform":{"type":"scalar"},"locs":[{"a":1584,"b":1588}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'canceled',\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now(),\n    completed_at = now()\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n    AND cancel_requested_at IS NOT NULL\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), canceled_waits AS (\n  UPDATE workflow_waits\n  SET\n    status = 'canceled',\n    updated_at = now()\n  WHERE run_id IN (SELECT id FROM updated_run)\n    AND status = 'open'\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, 'run.canceled', jsonb_build_object('mode', :mode::text)\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'canceled',
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = now(),
+ *     updated_at = now(),
+ *     completed_at = now()
+ *   WHERE id = :runId
+ *     AND current_step_key = :stepKey
+ *     AND lease_owner = :workerId
+ *     AND lease_expires_at >= now()
+ *     AND cancel_requested_at IS NOT NULL
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt"
+ * ), canceled_waits AS (
+ *   UPDATE workflow_waits
+ *   SET
+ *     status = 'canceled',
+ *     updated_at = now()
+ *   WHERE run_id IN (SELECT id FROM updated_run)
+ *     AND status = 'open'
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, :stepKey, 'run.canceled', jsonb_build_object('mode', :mode::text)
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const cancelRunAtBoundary = new PreparedQuery<ICancelRunAtBoundaryParams,ICancelRunAtBoundaryResult>(cancelRunAtBoundaryIR);
+
+
+/** 'InsertOutbox' parameters type */
+export interface IInsertOutboxParams {
+  availableAt?: DateOrString | null | void;
+  payload?: Json | null | void;
+  runId?: string | null | void;
+  topic?: string | null | void;
+}
+
+/** 'InsertOutbox' return type */
+export interface IInsertOutboxResult {
+  availableAt: Date;
+  createdAt: Date;
+  deliveredAt: Date | null;
+  id: string;
+  payload: Json;
+  runId: string | null;
+  topic: string;
+  updatedAt: Date;
+}
+
+/** 'InsertOutbox' query type */
+export interface IInsertOutboxQuery {
+  params: IInsertOutboxParams;
+  result: IInsertOutboxResult;
+}
+
+const insertOutboxIR: any = {"usedParamSet":{"runId":true,"topic":true,"payload":true,"availableAt":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":88,"b":93}]},{"name":"topic","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":103}]},{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":108,"b":115}]},{"name":"availableAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":129,"b":140}]}],"statement":"INSERT INTO workflow_outbox (\n  run_id,\n  topic,\n  payload,\n  available_at\n) VALUES (\n  :runId,\n  :topic,\n  :payload,\n  COALESCE(:availableAt, now())\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  topic,\n  payload,\n  available_at AS \"availableAt\",\n  delivered_at AS \"deliveredAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * INSERT INTO workflow_outbox (
+ *   run_id,
+ *   topic,
+ *   payload,
+ *   available_at
+ * ) VALUES (
+ *   :runId,
+ *   :topic,
+ *   :payload,
+ *   COALESCE(:availableAt, now())
+ * )
+ * RETURNING
+ *   id,
+ *   run_id AS "runId",
+ *   topic,
+ *   payload,
+ *   available_at AS "availableAt",
+ *   delivered_at AS "deliveredAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt"
+ * ```
+ */
+export const insertOutbox = new PreparedQuery<IInsertOutboxParams,IInsertOutboxResult>(insertOutboxIR);
+
+
+/** 'ClaimOutboxMessages' parameters type */
+export interface IClaimOutboxMessagesParams {
+  limit?: NumberOrString | null | void;
+}
+
+/** 'ClaimOutboxMessages' return type */
+export interface IClaimOutboxMessagesResult {
+  availableAt: Date;
+  createdAt: Date;
+  deliveredAt: Date | null;
+  id: string;
+  payload: Json;
+  runId: string | null;
+  topic: string;
+  updatedAt: Date;
+}
+
+/** 'ClaimOutboxMessages' query type */
+export interface IClaimOutboxMessagesQuery {
+  params: IClaimOutboxMessagesParams;
+  result: IClaimOutboxMessagesResult;
+}
+
+const claimOutboxMessagesIR: any = {"usedParamSet":{"limit":true},"params":[{"name":"limit","required":false,"transform":{"type":"scalar"},"locs":[{"a":191,"b":196}]}],"statement":"WITH candidate AS (\n  SELECT id\n  FROM workflow_outbox\n  WHERE delivered_at IS NULL\n    AND available_at <= now()\n  ORDER BY available_at ASC, created_at ASC\n  FOR UPDATE SKIP LOCKED\n  LIMIT :limit\n)\nUPDATE workflow_outbox\nSET\n  available_at = now() + interval '30 seconds',\n  updated_at = now()\nWHERE id IN (SELECT id FROM candidate)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  topic,\n  payload,\n  available_at AS \"availableAt\",\n  delivered_at AS \"deliveredAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH candidate AS (
+ *   SELECT id
+ *   FROM workflow_outbox
+ *   WHERE delivered_at IS NULL
+ *     AND available_at <= now()
+ *   ORDER BY available_at ASC, created_at ASC
+ *   FOR UPDATE SKIP LOCKED
+ *   LIMIT :limit
+ * )
+ * UPDATE workflow_outbox
+ * SET
+ *   available_at = now() + interval '30 seconds',
+ *   updated_at = now()
+ * WHERE id IN (SELECT id FROM candidate)
+ * RETURNING
+ *   id,
+ *   run_id AS "runId",
+ *   topic,
+ *   payload,
+ *   available_at AS "availableAt",
+ *   delivered_at AS "deliveredAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt"
+ * ```
+ */
+export const claimOutboxMessages = new PreparedQuery<IClaimOutboxMessagesParams,IClaimOutboxMessagesResult>(claimOutboxMessagesIR);
+
+
+/** 'MarkOutboxDelivered' parameters type */
+export interface IMarkOutboxDeliveredParams {
+  outboxId?: string | null | void;
+}
+
+/** 'MarkOutboxDelivered' return type */
+export interface IMarkOutboxDeliveredResult {
+  delivered: number | null;
+}
+
+/** 'MarkOutboxDelivered' query type */
+export interface IMarkOutboxDeliveredQuery {
+  params: IMarkOutboxDeliveredParams;
+  result: IMarkOutboxDeliveredResult;
+}
+
+const markOutboxDeliveredIR: any = {"usedParamSet":{"outboxId":true},"params":[{"name":"outboxId","required":false,"transform":{"type":"scalar"},"locs":[{"a":83,"b":91}]}],"statement":"UPDATE workflow_outbox\nSET\n  delivered_at = now(),\n  updated_at = now()\nWHERE id = :outboxId\n  AND delivered_at IS NULL\nRETURNING 1::int AS delivered"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * UPDATE workflow_outbox
+ * SET
+ *   delivered_at = now(),
+ *   updated_at = now()
+ * WHERE id = :outboxId
+ *   AND delivered_at IS NULL
+ * RETURNING 1::int AS delivered
+ * ```
+ */
+export const markOutboxDelivered = new PreparedQuery<IMarkOutboxDeliveredParams,IMarkOutboxDeliveredResult>(markOutboxDeliveredIR);
+
+
+/** 'CreateSchedule' parameters type */
+export interface ICreateScheduleParams {
+  cronExpression?: string | null | void;
+  nextFireAt?: DateOrString | null | void;
+  payload?: Json | null | void;
+  priority?: number | null | void;
+  taskQueue?: string | null | void;
+  workflowName?: string | null | void;
+}
+
+/** 'CreateSchedule' return type */
+export interface ICreateScheduleResult {
+  active: boolean;
+  createdAt: Date;
+  cronExpression: string;
+  id: string;
+  nextFireAt: Date;
+  payload: Json;
+  priority: number;
+  taskQueue: string;
+  updatedAt: Date;
+  workflowName: string;
+}
+
+/** 'CreateSchedule' query type */
+export interface ICreateScheduleQuery {
+  params: ICreateScheduleParams;
+  result: ICreateScheduleResult;
+}
+
+const createScheduleIR: any = {"usedParamSet":{"workflowName":true,"cronExpression":true,"payload":true,"taskQueue":true,"priority":true,"nextFireAt":true},"params":[{"name":"workflowName","required":false,"transform":{"type":"scalar"},"locs":[{"a":134,"b":146}]},{"name":"cronExpression","required":false,"transform":{"type":"scalar"},"locs":[{"a":151,"b":165}]},{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":170,"b":177}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":182,"b":191}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":196,"b":204}]},{"name":"nextFireAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":209,"b":219}]}],"statement":"INSERT INTO workflow_schedules (\n  workflow_name,\n  cron_expression,\n  payload,\n  task_queue,\n  priority,\n  next_fire_at\n) VALUES (\n  :workflowName,\n  :cronExpression,\n  :payload,\n  :taskQueue,\n  :priority,\n  :nextFireAt\n)\nRETURNING\n  id,\n  workflow_name AS \"workflowName\",\n  cron_expression AS \"cronExpression\",\n  payload,\n  task_queue AS \"taskQueue\",\n  priority,\n  active,\n  next_fire_at AS \"nextFireAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * INSERT INTO workflow_schedules (
+ *   workflow_name,
+ *   cron_expression,
+ *   payload,
+ *   task_queue,
+ *   priority,
+ *   next_fire_at
+ * ) VALUES (
+ *   :workflowName,
+ *   :cronExpression,
+ *   :payload,
+ *   :taskQueue,
+ *   :priority,
+ *   :nextFireAt
+ * )
+ * RETURNING
+ *   id,
+ *   workflow_name AS "workflowName",
+ *   cron_expression AS "cronExpression",
+ *   payload,
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   active,
+ *   next_fire_at AS "nextFireAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt"
+ * ```
+ */
+export const createSchedule = new PreparedQuery<ICreateScheduleParams,ICreateScheduleResult>(createScheduleIR);
+
+
+/** 'ListSchedules' parameters type */
+export type IListSchedulesParams = void;
+
+/** 'ListSchedules' return type */
+export interface IListSchedulesResult {
+  active: boolean;
+  createdAt: Date;
+  cronExpression: string;
+  id: string;
+  nextFireAt: Date;
+  payload: Json;
+  priority: number;
+  taskQueue: string;
+  updatedAt: Date;
+  workflowName: string;
+}
+
+/** 'ListSchedules' query type */
+export interface IListSchedulesQuery {
+  params: IListSchedulesParams;
+  result: IListSchedulesResult;
+}
+
+const listSchedulesIR: any = {"usedParamSet":{},"params":[],"statement":"SELECT\n  id,\n  workflow_name AS \"workflowName\",\n  cron_expression AS \"cronExpression\",\n  payload,\n  task_queue AS \"taskQueue\",\n  priority,\n  active,\n  next_fire_at AS \"nextFireAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\"\nFROM workflow_schedules\nORDER BY next_fire_at ASC, created_at ASC"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   workflow_name AS "workflowName",
+ *   cron_expression AS "cronExpression",
+ *   payload,
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   active,
+ *   next_fire_at AS "nextFireAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt"
+ * FROM workflow_schedules
+ * ORDER BY next_fire_at ASC, created_at ASC
+ * ```
+ */
+export const listSchedules = new PreparedQuery<IListSchedulesParams,IListSchedulesResult>(listSchedulesIR);
+
+
+/** 'ClaimDueSchedules' parameters type */
+export interface IClaimDueSchedulesParams {
+  limit?: NumberOrString | null | void;
+}
+
+/** 'ClaimDueSchedules' return type */
+export interface IClaimDueSchedulesResult {
+  active: boolean;
+  createdAt: Date;
+  cronExpression: string;
+  id: string;
+  nextFireAt: Date;
+  payload: Json;
+  priority: number;
+  taskQueue: string;
+  updatedAt: Date;
+  workflowName: string;
+}
+
+/** 'ClaimDueSchedules' query type */
+export interface IClaimDueSchedulesQuery {
+  params: IClaimDueSchedulesParams;
+  result: IClaimDueSchedulesResult;
+}
+
+const claimDueSchedulesIR: any = {"usedParamSet":{"limit":true},"params":[{"name":"limit","required":false,"transform":{"type":"scalar"},"locs":[{"a":381,"b":386}]}],"statement":"SELECT\n  id,\n  workflow_name AS \"workflowName\",\n  cron_expression AS \"cronExpression\",\n  payload,\n  task_queue AS \"taskQueue\",\n  priority,\n  active,\n  next_fire_at AS \"nextFireAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\"\nFROM workflow_schedules\nWHERE active = TRUE\n  AND next_fire_at <= now()\nORDER BY next_fire_at ASC, created_at ASC\nFOR UPDATE SKIP LOCKED\nLIMIT :limit"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   workflow_name AS "workflowName",
+ *   cron_expression AS "cronExpression",
+ *   payload,
+ *   task_queue AS "taskQueue",
+ *   priority,
+ *   active,
+ *   next_fire_at AS "nextFireAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt"
+ * FROM workflow_schedules
+ * WHERE active = TRUE
+ *   AND next_fire_at <= now()
+ * ORDER BY next_fire_at ASC, created_at ASC
+ * FOR UPDATE SKIP LOCKED
+ * LIMIT :limit
+ * ```
+ */
+export const claimDueSchedules = new PreparedQuery<IClaimDueSchedulesParams,IClaimDueSchedulesResult>(claimDueSchedulesIR);
+
+
+/** 'RescheduleAfterFire' parameters type */
+export interface IRescheduleAfterFireParams {
+  id?: string | null | void;
+  nextFireAt?: DateOrString | null | void;
+}
+
+/** 'RescheduleAfterFire' return type */
+export type IRescheduleAfterFireResult = void;
+
+/** 'RescheduleAfterFire' query type */
+export interface IRescheduleAfterFireQuery {
+  params: IRescheduleAfterFireParams;
+  result: IRescheduleAfterFireResult;
+}
+
+const rescheduleAfterFireIR: any = {"usedParamSet":{"nextFireAt":true,"id":true},"params":[{"name":"nextFireAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":47,"b":57}]},{"name":"id","required":false,"transform":{"type":"scalar"},"locs":[{"a":92,"b":94}]}],"statement":"UPDATE workflow_schedules\nSET\n  next_fire_at = :nextFireAt,\n  updated_at = now()\nWHERE id = :id"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * UPDATE workflow_schedules
+ * SET
+ *   next_fire_at = :nextFireAt,
+ *   updated_at = now()
+ * WHERE id = :id
+ * ```
+ */
+export const rescheduleAfterFire = new PreparedQuery<IRescheduleAfterFireParams,IRescheduleAfterFireResult>(rescheduleAfterFireIR);
+
+
+/** 'CompleteTransactionalTask' parameters type */
+export interface ICompleteTransactionalTaskParams {
+  attemptId?: string | null | void;
+  context?: Json | null | void;
+  nextStepKey?: string | null | void;
+  output?: Json | null | void;
+  runId?: string | null | void;
+  stepKey?: string | null | void;
+  workerId?: string | null | void;
+}
+
+/** 'CompleteTransactionalTask' return type */
+export interface ICompleteTransactionalTaskResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'CompleteTransactionalTask' query type */
+export interface ICompleteTransactionalTaskQuery {
+  params: ICompleteTransactionalTaskParams;
+  result: ICompleteTransactionalTaskResult;
+}
+
+const completeTransactionalTaskIR: any = {"usedParamSet":{"nextStepKey":true,"context":true,"runId":true,"stepKey":true,"workerId":true,"output":true,"attemptId":true},"params":[{"name":"nextStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":97,"b":108},{"a":1699,"b":1710}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":125,"b":132}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":287,"b":292}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":321,"b":328},{"a":1637,"b":1644}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":352,"b":360}]},{"name":"output","required":false,"transform":{"type":"scalar"},"locs":[{"a":1384,"b":1390}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1473,"b":1482}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'queued',\n    current_step_key = :nextStepKey,\n    context = :context,\n    result = NULL,\n    error = NULL,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'completed',\n    output = :output,\n    error = NULL,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :attemptId\n    AND run_id IN (SELECT id FROM updated_run)\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, 'step.completed', jsonb_build_object('nextStepKey', :nextStepKey)\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'queued',
+ *     current_step_key = :nextStepKey,
+ *     context = :context,
+ *     result = NULL,
+ *     error = NULL,
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = now(),
+ *     updated_at = now()
+ *   WHERE id = :runId
+ *     AND current_step_key = :stepKey
+ *     AND lease_owner = :workerId
+ *     AND lease_expires_at >= now()
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt"
+ * ), updated_attempt AS (
+ *   UPDATE workflow_step_attempts
+ *   SET
+ *     status = 'completed',
+ *     output = :output,
+ *     error = NULL,
+ *     completed_at = now(),
+ *     updated_at = now()
+ *   WHERE id = :attemptId
+ *     AND run_id IN (SELECT id FROM updated_run)
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, :stepKey, 'step.completed', jsonb_build_object('nextStepKey', :nextStepKey)
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const completeTransactionalTask = new PreparedQuery<ICompleteTransactionalTaskParams,ICompleteTransactionalTaskResult>(completeTransactionalTaskIR);
+
+
+/** 'RetryTransactionalTask' parameters type */
+export interface IRetryTransactionalTaskParams {
+  attemptId?: string | null | void;
+  availableAt?: DateOrString | null | void;
+  error?: Json | null | void;
+  runId?: string | null | void;
+  stepKey?: string | null | void;
+  workerId?: string | null | void;
+}
+
+/** 'RetryTransactionalTask' return type */
+export interface IRetryTransactionalTaskResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'RetryTransactionalTask' query type */
+export interface IRetryTransactionalTaskQuery {
+  params: IRetryTransactionalTaskParams;
+  result: IRetryTransactionalTaskResult;
+}
+
+const retryTransactionalTaskIR: any = {"usedParamSet":{"stepKey":true,"error":true,"availableAt":true,"runId":true,"workerId":true,"attemptId":true},"params":[{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":97,"b":104},{"a":308,"b":315},{"a":1620,"b":1627}]},{"name":"error","required":false,"transform":{"type":"scalar"},"locs":[{"a":119,"b":124},{"a":1386,"b":1391}]},{"name":"availableAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":199,"b":210},{"a":1701,"b":1712}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":274,"b":279}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":339,"b":347}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1456,"b":1465}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'queued',\n    current_step_key = :stepKey,\n    error = :error,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = :availableAt,\n    updated_at = now(),\n    completed_at = NULL\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'failed',\n    output = NULL,\n    error = :error,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :attemptId\n    AND run_id IN (SELECT id FROM updated_run)\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, 'step.retry_scheduled',\n    jsonb_build_object('availableAt', to_jsonb(:availableAt))\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'queued',
+ *     current_step_key = :stepKey,
+ *     error = :error,
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = :availableAt,
+ *     updated_at = now(),
+ *     completed_at = NULL
+ *   WHERE id = :runId
+ *     AND current_step_key = :stepKey
+ *     AND lease_owner = :workerId
+ *     AND lease_expires_at >= now()
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt"
+ * ), updated_attempt AS (
+ *   UPDATE workflow_step_attempts
+ *   SET
+ *     status = 'failed',
+ *     output = NULL,
+ *     error = :error,
+ *     completed_at = now(),
+ *     updated_at = now()
+ *   WHERE id = :attemptId
+ *     AND run_id IN (SELECT id FROM updated_run)
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, :stepKey, 'step.retry_scheduled',
+ *     jsonb_build_object('availableAt', to_jsonb(:availableAt))
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const retryTransactionalTask = new PreparedQuery<IRetryTransactionalTaskParams,IRetryTransactionalTaskResult>(retryTransactionalTaskIR);
+
+
+/** 'FailTransactionalTask' parameters type */
+export interface IFailTransactionalTaskParams {
+  attemptId?: string | null | void;
+  error?: Json | null | void;
+  runId?: string | null | void;
+  stepKey?: string | null | void;
+  workerId?: string | null | void;
+}
+
+/** 'FailTransactionalTask' return type */
+export interface IFailTransactionalTaskResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  cancelMode: string | null;
+  cancelRequestedAt: Date | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  updatedAt: Date;
+}
+
+/** 'FailTransactionalTask' query type */
+export interface IFailTransactionalTaskQuery {
+  params: IFailTransactionalTaskParams;
+  result: IFailTransactionalTaskResult;
+}
+
+const failTransactionalTaskIR: any = {"usedParamSet":{"error":true,"runId":true,"stepKey":true,"workerId":true,"attemptId":true},"params":[{"name":"error","required":false,"transform":{"type":"scalar"},"locs":[{"a":86,"b":91},{"a":1347,"b":1352},{"a":1606,"b":1611}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":235,"b":240}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":269,"b":276},{"a":1581,"b":1588}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":300,"b":308}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1417,"b":1426}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'failed',\n    error = :error,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now(),\n    completed_at = now()\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'failed',\n    output = NULL,\n    error = :error,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :attemptId\n    AND run_id IN (SELECT id FROM updated_run)\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, 'step.failed', :error\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'failed',
+ *     error = :error,
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = now(),
+ *     updated_at = now(),
+ *     completed_at = now()
+ *   WHERE id = :runId
+ *     AND current_step_key = :stepKey
+ *     AND lease_owner = :workerId
+ *     AND lease_expires_at >= now()
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     cancel_requested_at AS "cancelRequestedAt",
+ *     cancel_mode AS "cancelMode",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt"
+ * ), updated_attempt AS (
+ *   UPDATE workflow_step_attempts
+ *   SET
+ *     status = 'failed',
+ *     output = NULL,
+ *     error = :error,
+ *     completed_at = now(),
+ *     updated_at = now()
+ *   WHERE id = :attemptId
+ *     AND run_id IN (SELECT id FROM updated_run)
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, :stepKey, 'step.failed', :error
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const failTransactionalTask = new PreparedQuery<IFailTransactionalTaskParams,IFailTransactionalTaskResult>(failTransactionalTaskIR);
+
+

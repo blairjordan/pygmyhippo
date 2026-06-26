@@ -1350,3 +1350,766 @@ FROM updated_runs;
 
 /* @name Ping */
 SELECT 1::int AS ok;
+
+/* @name StartRunIdempotent */
+WITH existing_run AS (
+  SELECT
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt",
+    FALSE AS inserted
+  FROM workflow_runs
+  WHERE definition_name = :definitionName
+    AND idempotency_key = :idempotencyKey
+), inserted_run AS (
+  INSERT INTO workflow_runs (
+    parent_run_id,
+    parent_step_key,
+    definition_name,
+    definition_version,
+    task_queue,
+    priority,
+    status,
+    current_step_key,
+    idempotency_key,
+    input,
+    context
+  )
+  SELECT
+    :parentRunId,
+    :parentStepKey,
+    :definitionName,
+    :definitionVersion,
+    :taskQueue,
+    :priority,
+    'queued'::workflow_run_status,
+    :currentStepKey,
+    :idempotencyKey,
+    :input,
+    '{}'::jsonb
+  WHERE NOT EXISTS (SELECT 1 FROM existing_run)
+  ON CONFLICT (definition_name, idempotency_key) DO NOTHING
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt",
+    TRUE AS inserted
+)
+SELECT * FROM inserted_run
+UNION ALL
+SELECT * FROM existing_run
+LIMIT 1;
+
+/* @name GetRunByDefinitionAndIdempotencyKey */
+SELECT
+  id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
+  continued_from_run_id AS "continuedFromRunId",
+  branched_from_run_id AS "branchedFromRunId",
+  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+  branched_from_attempt_id AS "branchedFromAttemptId",
+  superseded_by_run_id AS "supersededByRunId",
+  definition_name AS "definitionName",
+  definition_version AS "definitionVersion",
+  task_queue AS "taskQueue",
+  priority,
+  status,
+  current_step_key AS "currentStepKey",
+  input,
+  context,
+  result,
+  error,
+  lease_owner AS "leaseOwner",
+  lease_expires_at AS "leaseExpiresAt",
+  cancel_requested_at AS "cancelRequestedAt",
+  cancel_mode AS "cancelMode",
+  available_at AS "availableAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  completed_at AS "completedAt"
+FROM workflow_runs
+WHERE definition_name = :definitionName
+  AND idempotency_key = :idempotencyKey
+LIMIT 1;
+
+/* @name ContinueAsNewCompleteSource */
+UPDATE workflow_runs
+SET
+  status = 'completed',
+  current_step_key = NULL,
+  context = :context,
+  result = NULL,
+  error = NULL,
+  lease_owner = NULL,
+  lease_expires_at = NULL,
+  available_at = now(),
+  updated_at = now(),
+  completed_at = now()
+WHERE id = :runId
+  AND current_step_key = :stepKey
+  AND lease_owner = :workerId
+  AND lease_expires_at >= now()
+RETURNING
+  id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
+  continued_from_run_id AS "continuedFromRunId",
+  branched_from_run_id AS "branchedFromRunId",
+  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+  branched_from_attempt_id AS "branchedFromAttemptId",
+  superseded_by_run_id AS "supersededByRunId",
+  definition_name AS "definitionName",
+  definition_version AS "definitionVersion",
+  task_queue AS "taskQueue",
+  priority,
+  status,
+  current_step_key AS "currentStepKey",
+  input,
+  context,
+  result,
+  error,
+  lease_owner AS "leaseOwner",
+  lease_expires_at AS "leaseExpiresAt",
+  cancel_requested_at AS "cancelRequestedAt",
+  cancel_mode AS "cancelMode",
+  available_at AS "availableAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  completed_at AS "completedAt";
+
+/* @name ContinueAsNewInsertRun */
+INSERT INTO workflow_runs (
+  continued_from_run_id,
+  definition_name,
+  definition_version,
+  task_queue,
+  priority,
+  status,
+  current_step_key,
+  input,
+  context
+) VALUES (
+  :continuedFromRunId,
+  :definitionName,
+  :definitionVersion,
+  :taskQueue,
+  :priority,
+  'queued',
+  :currentStepKey,
+  :input,
+  '{}'::jsonb
+)
+RETURNING
+  id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
+  continued_from_run_id AS "continuedFromRunId",
+  branched_from_run_id AS "branchedFromRunId",
+  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+  branched_from_attempt_id AS "branchedFromAttemptId",
+  superseded_by_run_id AS "supersededByRunId",
+  definition_name AS "definitionName",
+  definition_version AS "definitionVersion",
+  task_queue AS "taskQueue",
+  priority,
+  status,
+  current_step_key AS "currentStepKey",
+  input,
+  context,
+  result,
+  error,
+  lease_owner AS "leaseOwner",
+  lease_expires_at AS "leaseExpiresAt",
+  cancel_requested_at AS "cancelRequestedAt",
+  cancel_mode AS "cancelMode",
+  available_at AS "availableAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  completed_at AS "completedAt";
+
+/* @name ContinueAsNewSetResult */
+UPDATE workflow_runs
+SET
+  result = jsonb_build_object('continuedRunId', :continuedRunId::text),
+  updated_at = now()
+WHERE id = :runId;
+
+/* @name ContinueAsNewCompleteAttempt */
+UPDATE workflow_step_attempts
+SET
+  status = 'completed',
+  output = jsonb_build_object('continuedRunId', :continuedRunId::text),
+  error = NULL,
+  completed_at = now(),
+  updated_at = now()
+WHERE id = :attemptId
+  AND run_id = :runId;
+
+/* @name GetChildRun */
+SELECT
+  id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
+  continued_from_run_id AS "continuedFromRunId",
+  branched_from_run_id AS "branchedFromRunId",
+  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+  branched_from_attempt_id AS "branchedFromAttemptId",
+  superseded_by_run_id AS "supersededByRunId",
+  definition_name AS "definitionName",
+  definition_version AS "definitionVersion",
+  task_queue AS "taskQueue",
+  priority,
+  status,
+  current_step_key AS "currentStepKey",
+  input,
+  context,
+  result,
+  error,
+  lease_owner AS "leaseOwner",
+  lease_expires_at AS "leaseExpiresAt",
+  cancel_requested_at AS "cancelRequestedAt",
+  cancel_mode AS "cancelMode",
+  available_at AS "availableAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  completed_at AS "completedAt"
+FROM workflow_runs
+WHERE parent_run_id = :parentRunId
+  AND parent_step_key = :parentStepKey
+ORDER BY created_at ASC
+LIMIT 1;
+
+/* @name ListChildRuns */
+SELECT
+  id,
+  parent_run_id AS "parentRunId",
+  parent_step_key AS "parentStepKey",
+  continued_from_run_id AS "continuedFromRunId",
+  branched_from_run_id AS "branchedFromRunId",
+  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+  branched_from_attempt_id AS "branchedFromAttemptId",
+  superseded_by_run_id AS "supersededByRunId",
+  definition_name AS "definitionName",
+  definition_version AS "definitionVersion",
+  task_queue AS "taskQueue",
+  priority,
+  status,
+  current_step_key AS "currentStepKey",
+  input,
+  context,
+  result,
+  error,
+  lease_owner AS "leaseOwner",
+  lease_expires_at AS "leaseExpiresAt",
+  cancel_requested_at AS "cancelRequestedAt",
+  cancel_mode AS "cancelMode",
+  available_at AS "availableAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  completed_at AS "completedAt"
+FROM workflow_runs
+WHERE parent_run_id = :parentRunId
+ORDER BY created_at ASC;
+
+/* @name WakeParentForChild */
+WITH updated_wait AS (
+  UPDATE workflow_waits
+  SET
+    status = 'resumed',
+    resume_payload = :payload,
+    resumed_at = now(),
+    updated_at = now()
+  WHERE correlation_key = :correlationKey
+    AND status = 'open'
+  RETURNING run_id AS "runId", step_key AS "stepKey"
+), updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'queued',
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = now(),
+    updated_at = now()
+  WHERE id IN (SELECT "runId" FROM updated_wait)
+    AND status = 'waiting'
+  RETURNING id
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT "runId", "stepKey", 'child.completed', :payload
+  FROM updated_wait
+  WHERE EXISTS (SELECT 1 FROM updated_run)
+)
+SELECT id AS "runId"
+FROM updated_run;
+
+/* @name RequestCancelRun */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    cancel_requested_at = now(),
+    cancel_mode = :mode,
+    status = CASE
+      WHEN :mode = 'hard' THEN 'canceled'::workflow_run_status
+      WHEN status = 'waiting' THEN 'queued'::workflow_run_status
+      WHEN status = 'failed' THEN 'canceled'::workflow_run_status
+      ELSE status
+    END,
+    lease_owner = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_owner END,
+    lease_expires_at = CASE WHEN :mode = 'hard' THEN NULL ELSE lease_expires_at END,
+    available_at = now(),
+    updated_at = now(),
+    completed_at = CASE
+      WHEN :mode = 'hard' OR status = 'failed' THEN now()
+      ELSE completed_at
+    END
+  WHERE id = :runId
+    AND status IN ('queued', 'running', 'waiting', 'failed')
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), canceled_waits AS (
+  UPDATE workflow_waits
+  SET
+    status = CASE WHEN :mode = 'hard' THEN 'canceled'::workflow_wait_status ELSE status END,
+    updated_at = now()
+  WHERE run_id IN (SELECT id FROM updated_run)
+    AND status = 'open'
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, "currentStepKey", :eventType, :eventPayload
+  FROM updated_run
+)
+SELECT * FROM updated_run;
+
+/* @name CancelRunAtBoundary */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'canceled',
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = now(),
+    updated_at = now(),
+    completed_at = now()
+  WHERE id = :runId
+    AND current_step_key = :stepKey
+    AND lease_owner = :workerId
+    AND lease_expires_at >= now()
+    AND cancel_requested_at IS NOT NULL
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), canceled_waits AS (
+  UPDATE workflow_waits
+  SET
+    status = 'canceled',
+    updated_at = now()
+  WHERE run_id IN (SELECT id FROM updated_run)
+    AND status = 'open'
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, 'run.canceled', jsonb_build_object('mode', :mode::text)
+  FROM updated_run
+)
+SELECT * FROM updated_run;
+
+/* @name InsertOutbox */
+INSERT INTO workflow_outbox (
+  run_id,
+  topic,
+  payload,
+  available_at
+) VALUES (
+  :runId,
+  :topic,
+  :payload,
+  COALESCE(:availableAt, now())
+)
+RETURNING
+  id,
+  run_id AS "runId",
+  topic,
+  payload,
+  available_at AS "availableAt",
+  delivered_at AS "deliveredAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt";
+
+/* @name ClaimOutboxMessages */
+WITH candidate AS (
+  SELECT id
+  FROM workflow_outbox
+  WHERE delivered_at IS NULL
+    AND available_at <= now()
+  ORDER BY available_at ASC, created_at ASC
+  FOR UPDATE SKIP LOCKED
+  LIMIT :limit
+)
+UPDATE workflow_outbox
+SET
+  available_at = now() + interval '30 seconds',
+  updated_at = now()
+WHERE id IN (SELECT id FROM candidate)
+RETURNING
+  id,
+  run_id AS "runId",
+  topic,
+  payload,
+  available_at AS "availableAt",
+  delivered_at AS "deliveredAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt";
+
+/* @name MarkOutboxDelivered */
+UPDATE workflow_outbox
+SET
+  delivered_at = now(),
+  updated_at = now()
+WHERE id = :outboxId
+  AND delivered_at IS NULL
+RETURNING 1::int AS delivered;
+
+/* @name CreateSchedule */
+INSERT INTO workflow_schedules (
+  workflow_name,
+  cron_expression,
+  payload,
+  task_queue,
+  priority,
+  next_fire_at
+) VALUES (
+  :workflowName,
+  :cronExpression,
+  :payload,
+  :taskQueue,
+  :priority,
+  :nextFireAt
+)
+RETURNING
+  id,
+  workflow_name AS "workflowName",
+  cron_expression AS "cronExpression",
+  payload,
+  task_queue AS "taskQueue",
+  priority,
+  active,
+  next_fire_at AS "nextFireAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt";
+
+/* @name ListSchedules */
+SELECT
+  id,
+  workflow_name AS "workflowName",
+  cron_expression AS "cronExpression",
+  payload,
+  task_queue AS "taskQueue",
+  priority,
+  active,
+  next_fire_at AS "nextFireAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+FROM workflow_schedules
+ORDER BY next_fire_at ASC, created_at ASC;
+
+/* @name ClaimDueSchedules */
+SELECT
+  id,
+  workflow_name AS "workflowName",
+  cron_expression AS "cronExpression",
+  payload,
+  task_queue AS "taskQueue",
+  priority,
+  active,
+  next_fire_at AS "nextFireAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt"
+FROM workflow_schedules
+WHERE active = TRUE
+  AND next_fire_at <= now()
+ORDER BY next_fire_at ASC, created_at ASC
+FOR UPDATE SKIP LOCKED
+LIMIT :limit;
+
+/* @name RescheduleAfterFire */
+UPDATE workflow_schedules
+SET
+  next_fire_at = :nextFireAt,
+  updated_at = now()
+WHERE id = :id;
+
+/* @name CompleteTransactionalTask */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'queued',
+    current_step_key = :nextStepKey,
+    context = :context,
+    result = NULL,
+    error = NULL,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = now(),
+    updated_at = now()
+  WHERE id = :runId
+    AND current_step_key = :stepKey
+    AND lease_owner = :workerId
+    AND lease_expires_at >= now()
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), updated_attempt AS (
+  UPDATE workflow_step_attempts
+  SET
+    status = 'completed',
+    output = :output,
+    error = NULL,
+    completed_at = now(),
+    updated_at = now()
+  WHERE id = :attemptId
+    AND run_id IN (SELECT id FROM updated_run)
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, 'step.completed', jsonb_build_object('nextStepKey', :nextStepKey)
+  FROM updated_run
+)
+SELECT * FROM updated_run;
+
+/* @name RetryTransactionalTask */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'queued',
+    current_step_key = :stepKey,
+    error = :error,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = :availableAt,
+    updated_at = now(),
+    completed_at = NULL
+  WHERE id = :runId
+    AND current_step_key = :stepKey
+    AND lease_owner = :workerId
+    AND lease_expires_at >= now()
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), updated_attempt AS (
+  UPDATE workflow_step_attempts
+  SET
+    status = 'failed',
+    output = NULL,
+    error = :error,
+    completed_at = now(),
+    updated_at = now()
+  WHERE id = :attemptId
+    AND run_id IN (SELECT id FROM updated_run)
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, 'step.retry_scheduled',
+    jsonb_build_object('availableAt', to_jsonb(:availableAt))
+  FROM updated_run
+)
+SELECT * FROM updated_run;
+
+/* @name FailTransactionalTask */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'failed',
+    error = :error,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = now(),
+    updated_at = now(),
+    completed_at = now()
+  WHERE id = :runId
+    AND current_step_key = :stepKey
+    AND lease_owner = :workerId
+    AND lease_expires_at >= now()
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    cancel_requested_at AS "cancelRequestedAt",
+    cancel_mode AS "cancelMode",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt"
+), updated_attempt AS (
+  UPDATE workflow_step_attempts
+  SET
+    status = 'failed',
+    output = NULL,
+    error = :error,
+    completed_at = now(),
+    updated_at = now()
+  WHERE id = :attemptId
+    AND run_id IN (SELECT id FROM updated_run)
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, 'step.failed', :error
+  FROM updated_run
+)
+SELECT * FROM updated_run;

@@ -1,22 +1,34 @@
-import type { Pool, PoolClient } from "pg"
+import type { PoolClient } from "pg"
 
 import {
   advanceTaskStep as advanceTaskStepQuery,
   cancelRun as cancelRunQuery,
+  cancelRunAtBoundary as cancelRunAtBoundaryQuery,
+  claimDueSchedules as claimDueSchedulesQuery,
   claimNextRunnableRun as claimNextRunnableRunQuery,
+  claimOutboxMessages as claimOutboxMessagesQuery,
+  completeTransactionalTask as completeTransactionalTaskQuery,
   completeRun as completeRunQuery,
+  continueAsNewCompleteAttempt as continueAsNewCompleteAttemptQuery,
+  continueAsNewCompleteSource as continueAsNewCompleteSourceQuery,
+  continueAsNewInsertRun as continueAsNewInsertRunQuery,
+  continueAsNewSetResult as continueAsNewSetResultQuery,
   completeStandaloneStepAttempt as completeStandaloneStepAttemptQuery,
   completeWaitResume as completeWaitResumeQuery,
   consumeSignal as consumeSignalQuery,
   countOpenWaits as countOpenWaitsQuery,
+  createSchedule as createScheduleQuery,
   createSignal as createSignalQuery,
   extendLease as extendLeaseQuery,
   expireOpenWaits as expireOpenWaitsQuery,
+  failTransactionalTask as failTransactionalTaskQuery,
   failRun as failRunQuery,
   failStandaloneStepAttempt as failStandaloneStepAttemptQuery,
+  getChildRun as getChildRunQuery,
   getLastStepAttempt as getLastStepAttemptQuery,
   getLastStepSequence as getLastStepSequenceQuery,
   getOpenWaitForUpdate as getOpenWaitForUpdateQuery,
+  getRunByDefinitionAndIdempotencyKey as getRunByDefinitionAndIdempotencyKeyQuery,
   getRunById as getRunByIdQuery,
   getRunByIdForUpdate as getRunByIdForUpdateQuery,
   getRunAttempts as getRunAttemptsQuery,
@@ -24,21 +36,30 @@ import {
   getStepAttemptByIdForRun as getStepAttemptByIdForRunQuery,
   insertEvent as insertEventQuery,
   insertBranchedRun as insertBranchedRunQuery,
+  insertOutbox as insertOutboxQuery,
   insertRun as insertRunQuery,
   insertStepAttempt as insertStepAttemptQuery,
   listActiveRuns as listActiveRunsQuery,
+  listChildRuns as listChildRunsQuery,
   listFailedRuns as listFailedRunsQuery,
   listRunLineage as listRunLineageQuery,
   listRuns as listRunsQuery,
+  listSchedules as listSchedulesQuery,
   listStuckRuns as listStuckRunsQuery,
+  markOutboxDelivered as markOutboxDeliveredQuery,
   markRunCompensationFailed as markRunCompensationFailedQuery,
   markRunSuperseded as markRunSupersededQuery,
   openWait as openWaitQuery,
   ping as pingQuery,
   recoverExpiredLeases as recoverExpiredLeasesQuery,
+  requestCancelRun as requestCancelRunQuery,
+  rescheduleAfterFire as rescheduleAfterFireQuery,
+  retryTransactionalTask as retryTransactionalTaskQuery,
   retryRun as retryRunQuery,
   scheduleRetry as scheduleRetryQuery,
   scheduleSleep as scheduleSleepQuery,
+  startRunIdempotent as startRunIdempotentQuery,
+  wakeParentForChild as wakeParentForChildQuery,
 } from "../queries/workflow-store.queries.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
@@ -255,17 +276,6 @@ const insertAttempt = async (
   return mapAttempt(requireRow(row, "Failed to insert step attempt"))
 }
 
-type Queryable = Pool | PoolClient
-
-const queryRows = async <TRow extends object>(
-  db: Queryable,
-  text: string,
-  values: readonly unknown[] = []
-) => {
-  const result = await db.query<TRow>(text, [...values])
-  return result.rows
-}
-
 const mapSchedule = (row: {
   id: string
   workflowName: string
@@ -392,199 +402,60 @@ export const createWorkflowStore = (
       },
       () =>
         withTransaction(db, async (client) => {
-      if (args.idempotencyKey) {
-        const [idempotentRow] = await queryRows<
-          IRunRow & { inserted: boolean }
-        >(
-          client,
-          `
-            WITH existing_run AS (
-              SELECT
-                id,
-                parent_run_id AS "parentRunId",
-                parent_step_key AS "parentStepKey",
-                continued_from_run_id AS "continuedFromRunId",
-                branched_from_run_id AS "branchedFromRunId",
-                branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-                branched_from_attempt_id AS "branchedFromAttemptId",
-                superseded_by_run_id AS "supersededByRunId",
-                definition_name AS "definitionName",
-                definition_version AS "definitionVersion",
-                task_queue AS "taskQueue",
-                priority,
-                status,
-                current_step_key AS "currentStepKey",
-                input,
-                context,
-                result,
-                error,
-                lease_owner AS "leaseOwner",
-                lease_expires_at AS "leaseExpiresAt",
-                cancel_requested_at AS "cancelRequestedAt",
-                cancel_mode AS "cancelMode",
-                available_at AS "availableAt",
-                created_at AS "createdAt",
-                updated_at AS "updatedAt",
-                completed_at AS "completedAt",
-                FALSE AS inserted
-              FROM workflow_runs
-              WHERE definition_name = $1
-                AND idempotency_key = $2
-            ), inserted_run AS (
-              INSERT INTO workflow_runs (
-                parent_run_id,
-                parent_step_key,
-                definition_name,
-                definition_version,
-                task_queue,
-                priority,
-                status,
-                current_step_key,
-                idempotency_key,
-                input,
-                context
+          if (args.idempotencyKey) {
+            const [idempotentRow] = await startRunIdempotentQuery.run(args, client)
+
+            if (idempotentRow) {
+              const run = mapRun(idempotentRow as unknown as IRunRow)
+
+              if (idempotentRow.inserted) {
+                await insertEventQuery.run(
+                  {
+                    runId: run.id,
+                    stepKey: run.currentStepKey,
+                    eventType: "run.started",
+                    payload: {},
+                  },
+                  client
+                )
+
+                await notifyRunnable()
+                await notifyRunEvent(run.id)
+              }
+
+              return run
+            }
+
+            const [existingRow] =
+              await getRunByDefinitionAndIdempotencyKeyQuery.run(
+                {
+                  definitionName: args.definitionName,
+                  idempotencyKey: args.idempotencyKey,
+                },
+                client
               )
-              SELECT
-                $3,
-                $4,
-                $1,
-                $5,
-                $6,
-                $7,
-                'queued'::workflow_run_status,
-                $8,
-                $2,
-                $9,
-                '{}'::jsonb
-              WHERE NOT EXISTS (SELECT 1 FROM existing_run)
-              ON CONFLICT (definition_name, idempotency_key) DO NOTHING
-              RETURNING
-                id,
-                parent_run_id AS "parentRunId",
-                parent_step_key AS "parentStepKey",
-                continued_from_run_id AS "continuedFromRunId",
-                branched_from_run_id AS "branchedFromRunId",
-                branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-                branched_from_attempt_id AS "branchedFromAttemptId",
-                superseded_by_run_id AS "supersededByRunId",
-                definition_name AS "definitionName",
-                definition_version AS "definitionVersion",
-                task_queue AS "taskQueue",
-                priority,
-                status,
-                current_step_key AS "currentStepKey",
-                input,
-                context,
-                result,
-                error,
-                lease_owner AS "leaseOwner",
-                lease_expires_at AS "leaseExpiresAt",
-                cancel_requested_at AS "cancelRequestedAt",
-                cancel_mode AS "cancelMode",
-                available_at AS "availableAt",
-                created_at AS "createdAt",
-                updated_at AS "updatedAt",
-                completed_at AS "completedAt",
-                TRUE AS inserted
-            )
-            SELECT * FROM inserted_run
-            UNION ALL
-            SELECT * FROM existing_run
-            LIMIT 1
-          `,
-          [
-            args.definitionName,
-            args.idempotencyKey,
-            args.parentRunId ?? null,
-            args.parentStepKey ?? null,
-            args.definitionVersion,
-            args.taskQueue,
-            args.priority,
-            args.currentStepKey,
-            args.input,
-          ]
-        )
 
-        if (idempotentRow) {
-          const run = mapRun(idempotentRow)
-
-          if (idempotentRow.inserted) {
-            await insertEventQuery.run(
-              {
-                runId: run.id,
-                stepKey: run.currentStepKey,
-                eventType: "run.started",
-                payload: {},
-              },
-              client
-            )
-
-            await notifyRunnable()
-            await notifyRunEvent(run.id)
+            if (existingRow) {
+              return mapRun(existingRow)
+            }
           }
 
+          const [runRow] = await insertRunQuery.run(args, client)
+          const run = mapRun(requireRow(runRow, "Failed to insert workflow run"))
+
+          await insertEventQuery.run(
+            {
+              runId: run.id,
+              stepKey: run.currentStepKey,
+              eventType: "run.started",
+              payload: {},
+            },
+            client
+          )
+
+          await notifyRunnable()
+          await notifyRunEvent(run.id)
           return run
-        }
-
-        const [existingRow] = await queryRows<IRunRow>(
-          client,
-          `
-            SELECT
-              id,
-              parent_run_id AS "parentRunId",
-              parent_step_key AS "parentStepKey",
-              continued_from_run_id AS "continuedFromRunId",
-              branched_from_run_id AS "branchedFromRunId",
-              branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-              branched_from_attempt_id AS "branchedFromAttemptId",
-              superseded_by_run_id AS "supersededByRunId",
-              definition_name AS "definitionName",
-              definition_version AS "definitionVersion",
-              task_queue AS "taskQueue",
-              priority,
-              status,
-              current_step_key AS "currentStepKey",
-              input,
-              context,
-              result,
-              error,
-              lease_owner AS "leaseOwner",
-              lease_expires_at AS "leaseExpiresAt",
-              cancel_requested_at AS "cancelRequestedAt",
-              cancel_mode AS "cancelMode",
-              available_at AS "availableAt",
-              created_at AS "createdAt",
-              updated_at AS "updatedAt",
-              completed_at AS "completedAt"
-            FROM workflow_runs
-            WHERE definition_name = $1
-              AND idempotency_key = $2
-            LIMIT 1
-          `,
-          [args.definitionName, args.idempotencyKey]
-        )
-
-        if (existingRow) {
-          return mapRun(existingRow)
-        }
-      }
-
-      const [runRow] = await insertRunQuery.run(args, client)
-      const run = mapRun(requireRow(runRow, "Failed to insert workflow run"))
-
-      await insertEventQuery.run(
-        {
-          runId: run.id,
-          stepKey: run.currentStepKey,
-          eventType: "run.started",
-          payload: {},
-        },
-        client
-      )
-
-      await notifyRunnable()
-      await notifyRunEvent(run.id)
-      return run
         })
     )
 
@@ -815,182 +686,83 @@ export const createWorkflowStore = (
       },
       () =>
         withTransaction(db, async (client) => {
-      const [completedRow] = await queryRows<IRunRow>(
-        client,
-        `
-          UPDATE workflow_runs
-          SET
-            status = 'completed',
-            current_step_key = NULL,
-            context = $4,
-            result = NULL,
-            error = NULL,
-            lease_owner = NULL,
-            lease_expires_at = NULL,
-            available_at = now(),
-            updated_at = now(),
-            completed_at = now()
-          WHERE id = $1
-            AND current_step_key = $2
-            AND lease_owner = $3
-            AND lease_expires_at >= now()
-          RETURNING
-            id,
-            parent_run_id AS "parentRunId",
-            parent_step_key AS "parentStepKey",
-            continued_from_run_id AS "continuedFromRunId",
-            branched_from_run_id AS "branchedFromRunId",
-            branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-            branched_from_attempt_id AS "branchedFromAttemptId",
-            superseded_by_run_id AS "supersededByRunId",
-            definition_name AS "definitionName",
-            definition_version AS "definitionVersion",
-            task_queue AS "taskQueue",
-            priority,
-            status,
-            current_step_key AS "currentStepKey",
-            input,
-            context,
-            result,
-            error,
-            lease_owner AS "leaseOwner",
-            lease_expires_at AS "leaseExpiresAt",
-            cancel_requested_at AS "cancelRequestedAt",
-            cancel_mode AS "cancelMode",
-            available_at AS "availableAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt",
-            completed_at AS "completedAt"
-        `,
-        [args.runId, args.stepKey, args.workerId, args.context]
-      )
-
-      if (!completedRow) {
-        throw new LostLeaseError("Failed to continue run under active lease")
-      }
-
-      const completedRun = mapRun(completedRow)
-
-      const [nextRunRow] = await queryRows<IRunRow>(
-        client,
-        `
-          INSERT INTO workflow_runs (
-            continued_from_run_id,
-            definition_name,
-            definition_version,
-            task_queue,
-            priority,
-            status,
-            current_step_key,
-            input,
-            context
-          ) VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            'queued',
-            $6,
-            $7,
-            '{}'::jsonb
+          const [completedRow] = await continueAsNewCompleteSourceQuery.run(
+            {
+              runId: args.runId,
+              stepKey: args.stepKey,
+              workerId: args.workerId,
+              context: args.context,
+            },
+            client
           )
-          RETURNING
-            id,
-            parent_run_id AS "parentRunId",
-            parent_step_key AS "parentStepKey",
-            continued_from_run_id AS "continuedFromRunId",
-            branched_from_run_id AS "branchedFromRunId",
-            branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-            branched_from_attempt_id AS "branchedFromAttemptId",
-            superseded_by_run_id AS "supersededByRunId",
-            definition_name AS "definitionName",
-            definition_version AS "definitionVersion",
-            task_queue AS "taskQueue",
-            priority,
-            status,
-            current_step_key AS "currentStepKey",
-            input,
-            context,
-            result,
-            error,
-            lease_owner AS "leaseOwner",
-            lease_expires_at AS "leaseExpiresAt",
-            cancel_requested_at AS "cancelRequestedAt",
-            cancel_mode AS "cancelMode",
-            available_at AS "availableAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt",
-            completed_at AS "completedAt"
-        `,
-        [
-          completedRun.id,
-          completedRun.definitionName,
-          completedRun.definitionVersion,
-          args.taskQueue,
-          args.priority,
-          args.currentStepKey,
-          args.input,
-        ]
-      )
 
-      const nextRun = mapRun(requireRow(nextRunRow, "Failed to insert continued run"))
+          if (!completedRow) {
+            throw new LostLeaseError("Failed to continue run under active lease")
+          }
 
-      await queryRows(
-        client,
-        `
-          UPDATE workflow_runs
-          SET
-            result = jsonb_build_object('continuedRunId', $2),
-            updated_at = now()
-          WHERE id = $1
-        `,
-        [completedRun.id, nextRun.id]
-      )
+          const completedRun = mapRun(completedRow)
 
-      await queryRows(
-        client,
-        `
-          UPDATE workflow_step_attempts
-          SET
-            status = 'completed',
-            output = jsonb_build_object('continuedRunId', $2),
-            error = NULL,
-            completed_at = now(),
-            updated_at = now()
-          WHERE id = $1
-            AND run_id = $3
-        `,
-        [args.attemptId, nextRun.id, args.runId]
-      )
+          const [nextRunRow] = await continueAsNewInsertRunQuery.run(
+            {
+              continuedFromRunId: completedRun.id,
+              definitionName: completedRun.definitionName,
+              definitionVersion: completedRun.definitionVersion,
+              taskQueue: args.taskQueue,
+              priority: args.priority,
+              currentStepKey: args.currentStepKey,
+              input: args.input,
+            },
+            client
+          )
 
-      await insertEventQuery.run(
-        {
-          runId: completedRun.id,
-          stepKey: args.stepKey,
-          eventType: "run.continued_as_new",
-          payload: {
-            continuedRunId: nextRun.id,
-          },
-        },
-        client
-      )
+          const nextRun = mapRun(
+            requireRow(nextRunRow, "Failed to insert continued run")
+          )
 
-      await insertEventQuery.run(
-        {
-          runId: nextRun.id,
-          stepKey: nextRun.currentStepKey,
-          eventType: "run.started",
-          payload: {
-            continuedFromRunId: completedRun.id,
-          },
-        },
-        client
-      )
+          await continueAsNewSetResultQuery.run(
+            {
+              runId: completedRun.id,
+              continuedRunId: nextRun.id,
+            },
+            client
+          )
 
-      await notifyRunnable()
-      await notifyRunEvent(completedRun.id)
-      await notifyRunEvent(nextRun.id)
+          await continueAsNewCompleteAttemptQuery.run(
+            {
+              attemptId: args.attemptId,
+              continuedRunId: nextRun.id,
+              runId: args.runId,
+            },
+            client
+          )
+
+          await insertEventQuery.run(
+            {
+              runId: completedRun.id,
+              stepKey: args.stepKey,
+              eventType: "run.continued_as_new",
+              payload: {
+                continuedRunId: nextRun.id,
+              },
+            },
+            client
+          )
+
+          await insertEventQuery.run(
+            {
+              runId: nextRun.id,
+              stepKey: nextRun.currentStepKey,
+              eventType: "run.started",
+              payload: {
+                continuedFromRunId: completedRun.id,
+              },
+            },
+            client
+          )
+
+          await notifyRunnable()
+          await notifyRunEvent(completedRun.id)
+          await notifyRunEvent(nextRun.id)
           return nextRun
         })
     )
@@ -1466,42 +1238,7 @@ export const createWorkflowStore = (
         }),
       },
       async () => {
-    const [row] = await queryRows<IRunRow>(
-      db,
-      `
-        SELECT
-          id,
-          parent_run_id AS "parentRunId",
-          parent_step_key AS "parentStepKey",
-          continued_from_run_id AS "continuedFromRunId",
-          branched_from_run_id AS "branchedFromRunId",
-          branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-          branched_from_attempt_id AS "branchedFromAttemptId",
-          superseded_by_run_id AS "supersededByRunId",
-          definition_name AS "definitionName",
-          definition_version AS "definitionVersion",
-          status,
-          current_step_key AS "currentStepKey",
-          input,
-          context,
-          result,
-          error,
-          lease_owner AS "leaseOwner",
-          lease_expires_at AS "leaseExpiresAt",
-          cancel_requested_at AS "cancelRequestedAt",
-          cancel_mode AS "cancelMode",
-          available_at AS "availableAt",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt",
-          completed_at AS "completedAt"
-        FROM workflow_runs
-        WHERE parent_run_id = $1
-          AND parent_step_key = $2
-        ORDER BY created_at ASC
-        LIMIT 1
-      `,
-      [args.parentRunId, args.parentStepKey]
-    )
+        const [row] = await getChildRunQuery.run(args, db)
 
         if (!row) {
           return null
@@ -1524,40 +1261,7 @@ export const createWorkflowStore = (
         }),
       },
       async () => {
-        const rows = await queryRows<IRunRow>(
-          db,
-          `
-        SELECT
-          id,
-          parent_run_id AS "parentRunId",
-          parent_step_key AS "parentStepKey",
-          continued_from_run_id AS "continuedFromRunId",
-          branched_from_run_id AS "branchedFromRunId",
-          branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-          branched_from_attempt_id AS "branchedFromAttemptId",
-          superseded_by_run_id AS "supersededByRunId",
-          definition_name AS "definitionName",
-          definition_version AS "definitionVersion",
-          status,
-          current_step_key AS "currentStepKey",
-          input,
-          context,
-          result,
-          error,
-          lease_owner AS "leaseOwner",
-          lease_expires_at AS "leaseExpiresAt",
-          cancel_requested_at AS "cancelRequestedAt",
-          cancel_mode AS "cancelMode",
-          available_at AS "availableAt",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt",
-          completed_at AS "completedAt"
-        FROM workflow_runs
-        WHERE parent_run_id = $1
-        ORDER BY created_at ASC
-      `,
-          [parentRunId]
-        )
+        const rows = await listChildRunsQuery.run({ parentRunId }, db)
 
         return rows.map(mapRun)
       }
@@ -1573,40 +1277,9 @@ export const createWorkflowStore = (
       childStatus: childRun.status,
     }
     const correlationKey = `child:${childRun.parentRunId}:${childRun.parentStepKey}`
-    const [row] = await queryRows<{ runId: string }>(
-      db,
-      `
-        WITH updated_wait AS (
-          UPDATE workflow_waits
-          SET
-            status = 'resumed',
-            resume_payload = $2,
-            resumed_at = now(),
-            updated_at = now()
-          WHERE correlation_key = $1
-            AND status = 'open'
-          RETURNING run_id AS "runId", step_key AS "stepKey"
-        ), updated_run AS (
-          UPDATE workflow_runs
-          SET
-            status = 'queued',
-            lease_owner = NULL,
-            lease_expires_at = NULL,
-            available_at = now(),
-            updated_at = now()
-          WHERE id IN (SELECT "runId" FROM updated_wait)
-            AND status = 'waiting'
-          RETURNING id
-        ), inserted_event AS (
-          INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-          SELECT "runId", "stepKey", 'child.completed', $2
-          FROM updated_wait
-          WHERE EXISTS (SELECT 1 FROM updated_run)
-        )
-        SELECT id AS "runId"
-        FROM updated_run
-      `,
-      [correlationKey, payload]
+    const [row] = await wakeParentForChildQuery.run(
+      { correlationKey, payload },
+      db
     )
 
     if (row) {
@@ -1632,77 +1305,21 @@ export const createWorkflowStore = (
         }),
       },
       async () => {
-    const eventType =
-      args.mode === "hard" ? "run.canceled" : "run.cancel_requested"
-    const eventPayload = {
-      mode: args.mode,
-      ...(args.reason ? { reason: args.reason } : {}),
-    }
-    const [row] = await queryRows<IRunRow>(
-      db,
-      `
-        WITH updated_run AS (
-          UPDATE workflow_runs
-          SET
-            cancel_requested_at = now(),
-            cancel_mode = $2,
-            status = CASE
-              WHEN $2 = 'hard' THEN 'canceled'::workflow_run_status
-              WHEN status = 'waiting' THEN 'queued'::workflow_run_status
-              WHEN status = 'failed' THEN 'canceled'::workflow_run_status
-              ELSE status
-            END,
-            lease_owner = CASE WHEN $2 = 'hard' THEN NULL ELSE lease_owner END,
-            lease_expires_at = CASE WHEN $2 = 'hard' THEN NULL ELSE lease_expires_at END,
-            available_at = now(),
-            updated_at = now(),
-            completed_at = CASE
-              WHEN $2 = 'hard' OR status = 'failed' THEN now()
-              ELSE completed_at
-            END
-          WHERE id = $1
-            AND status IN ('queued', 'running', 'waiting', 'failed')
-          RETURNING
-            id,
-            parent_run_id AS "parentRunId",
-            parent_step_key AS "parentStepKey",
-            continued_from_run_id AS "continuedFromRunId",
-            branched_from_run_id AS "branchedFromRunId",
-            branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-            branched_from_attempt_id AS "branchedFromAttemptId",
-            superseded_by_run_id AS "supersededByRunId",
-            definition_name AS "definitionName",
-            definition_version AS "definitionVersion",
-            status,
-            current_step_key AS "currentStepKey",
-            input,
-            context,
-            result,
-            error,
-            lease_owner AS "leaseOwner",
-            lease_expires_at AS "leaseExpiresAt",
-            cancel_requested_at AS "cancelRequestedAt",
-            cancel_mode AS "cancelMode",
-            available_at AS "availableAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt",
-            completed_at AS "completedAt"
-        ), canceled_waits AS (
-          UPDATE workflow_waits
-          SET
-            status = CASE WHEN $2 = 'hard' THEN 'canceled'::workflow_wait_status ELSE status END,
-            updated_at = now()
-          WHERE run_id IN (SELECT id FROM updated_run)
-            AND status = 'open'
-        ), inserted_event AS (
-          INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-          SELECT id, "currentStepKey", $3, $4
-          FROM updated_run
+        const eventType =
+          args.mode === "hard" ? "run.canceled" : "run.cancel_requested"
+        const eventPayload = {
+          mode: args.mode,
+          ...(args.reason ? { reason: args.reason } : {}),
+        }
+        const [row] = await requestCancelRunQuery.run(
+          {
+            runId: args.runId,
+            mode: args.mode,
+            eventType,
+            eventPayload,
+          },
+          db
         )
-        SELECT * FROM updated_run
-      `,
-      [args.runId, args.mode, eventType, eventPayload]
-    )
 
         if (row) {
           const run = mapRun(row)
@@ -1726,64 +1343,7 @@ export const createWorkflowStore = (
     workerId: string
     mode: WorkflowCancelMode
   }) => {
-    const [row] = await queryRows<IRunRow>(
-      db,
-      `
-        WITH updated_run AS (
-          UPDATE workflow_runs
-          SET
-            status = 'canceled',
-            lease_owner = NULL,
-            lease_expires_at = NULL,
-            available_at = now(),
-            updated_at = now(),
-            completed_at = now()
-          WHERE id = $1
-            AND current_step_key = $2
-            AND lease_owner = $3
-            AND lease_expires_at >= now()
-            AND cancel_requested_at IS NOT NULL
-          RETURNING
-            id,
-            parent_run_id AS "parentRunId",
-            parent_step_key AS "parentStepKey",
-            continued_from_run_id AS "continuedFromRunId",
-            branched_from_run_id AS "branchedFromRunId",
-            branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-            branched_from_attempt_id AS "branchedFromAttemptId",
-            superseded_by_run_id AS "supersededByRunId",
-            definition_name AS "definitionName",
-            definition_version AS "definitionVersion",
-            status,
-            current_step_key AS "currentStepKey",
-            input,
-            context,
-            result,
-            error,
-            lease_owner AS "leaseOwner",
-            lease_expires_at AS "leaseExpiresAt",
-            cancel_requested_at AS "cancelRequestedAt",
-            cancel_mode AS "cancelMode",
-            available_at AS "availableAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt",
-            completed_at AS "completedAt"
-        ), canceled_waits AS (
-          UPDATE workflow_waits
-          SET
-            status = 'canceled',
-            updated_at = now()
-          WHERE run_id IN (SELECT id FROM updated_run)
-            AND status = 'open'
-        ), inserted_event AS (
-          INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-          SELECT id, $2, 'run.canceled', jsonb_build_object('mode', $4)
-          FROM updated_run
-        )
-        SELECT * FROM updated_run
-      `,
-      [args.runId, args.stepKey, args.workerId, args.mode]
-    )
+    const [row] = await cancelRunAtBoundaryQuery.run(args, db)
 
     if (!row) {
       return null
@@ -1974,31 +1534,14 @@ export const createWorkflowStore = (
     availableAt?: Date
     client?: PoolClient
   }) => {
-    await queryRows(
-      args.client ?? db,
-      `
-        INSERT INTO workflow_outbox (
-          run_id,
-          topic,
-          payload,
-          available_at
-        ) VALUES (
-          $1,
-          $2,
-          $3,
-          COALESCE($4, now())
-        )
-        RETURNING
-          id,
-          run_id AS "runId",
-          topic,
-          payload,
-          available_at AS "availableAt",
-          delivered_at AS "deliveredAt",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-      `,
-      [args.runId ?? null, args.topic, args.payload, args.availableAt ?? null]
+    await insertOutboxQuery.run(
+      {
+        runId: args.runId ?? null,
+        topic: args.topic,
+        payload: args.payload,
+        availableAt: args.availableAt ?? null,
+      },
+      args.client ?? db
     )
   }
 
@@ -2034,44 +1577,7 @@ export const createWorkflowStore = (
       },
       () =>
         withTransaction(db, async (client) => {
-      const rows = await queryRows<{
-        id: string
-        runId: string | null
-        topic: string
-        payload: JsonValue
-        availableAt: Date
-        deliveredAt: Date | null
-        createdAt: Date
-        updatedAt: Date
-      }>(
-        client,
-        `
-          WITH candidate AS (
-            SELECT id
-            FROM workflow_outbox
-            WHERE delivered_at IS NULL
-              AND available_at <= now()
-            ORDER BY available_at ASC, created_at ASC
-            FOR UPDATE SKIP LOCKED
-            LIMIT $1
-          )
-          UPDATE workflow_outbox
-          SET
-            available_at = now() + interval '30 seconds',
-            updated_at = now()
-          WHERE id IN (SELECT id FROM candidate)
-          RETURNING
-            id,
-            run_id AS "runId",
-            topic,
-            payload,
-            available_at AS "availableAt",
-            delivered_at AS "deliveredAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt"
-        `,
-        [limit]
-      )
+          const rows = await claimOutboxMessagesQuery.run({ limit }, client)
 
           return rows.map(mapOutbox)
         })
@@ -2087,19 +1593,7 @@ export const createWorkflowStore = (
         },
       },
       async () => {
-        const rows = await queryRows<{ delivered: number }>(
-          db,
-          `
-        UPDATE workflow_outbox
-        SET
-          delivered_at = now(),
-          updated_at = now()
-        WHERE id = $1
-          AND delivered_at IS NULL
-        RETURNING 1::int AS delivered
-      `,
-          [outboxId]
-        )
+        const rows = await markOutboxDeliveredQuery.run({ outboxId }, db)
 
         return rows.length > 0
       }
@@ -2127,91 +1621,24 @@ export const createWorkflowStore = (
         },
       },
       async () => {
-        const rows = await queryRows<{
-      id: string
-      workflowName: string
-      cronExpression: string
-      payload: JsonValue
-      taskQueue: string
-      priority: number
-      active: boolean
-      nextFireAt: Date
-      createdAt: Date
-      updatedAt: Date
-    }>(
-      db,
-      `
-        INSERT INTO workflow_schedules (
-          workflow_name,
-          cron_expression,
-          payload,
-          task_queue,
-          priority,
-          next_fire_at
-        ) VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6
+        const rows = await createScheduleQuery.run(
+          {
+            workflowName: args.workflowName,
+            cronExpression: args.cronExpression,
+            payload: args.payload ?? {},
+            taskQueue: args.taskQueue,
+            priority: args.priority,
+            nextFireAt: args.nextFireAt,
+          },
+          db
         )
-        RETURNING
-          id,
-          workflow_name AS "workflowName",
-          cron_expression AS "cronExpression",
-          payload,
-          task_queue AS "taskQueue",
-          priority,
-          active,
-          next_fire_at AS "nextFireAt",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-      `,
-      [
-        args.workflowName,
-        args.cronExpression,
-        args.payload ?? {},
-        args.taskQueue,
-        args.priority,
-        args.nextFireAt,
-      ]
-    )
 
         return mapSchedule(requireRow(rows[0], "Failed to create schedule"))
       }
     )
 
   const listSchedules = async () => {
-    const rows = await queryRows<{
-      id: string
-      workflowName: string
-      cronExpression: string
-      payload: JsonValue
-      taskQueue: string
-      priority: number
-      active: boolean
-      nextFireAt: Date
-      createdAt: Date
-      updatedAt: Date
-    }>(
-      db,
-      `
-        SELECT
-          id,
-          workflow_name AS "workflowName",
-          cron_expression AS "cronExpression",
-          payload,
-          task_queue AS "taskQueue",
-          priority,
-          active,
-          next_fire_at AS "nextFireAt",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-        FROM workflow_schedules
-        ORDER BY next_fire_at ASC, created_at ASC
-      `
-    )
+    const rows = await listSchedulesQuery.run(undefined, db)
 
     return rows.map(mapSchedule)
   }
@@ -2233,39 +1660,9 @@ export const createWorkflowStore = (
       },
       () =>
         withTransaction(db, async (client) => {
-          const scheduleRows = await queryRows<{
-            id: string
-            workflowName: string
-            cronExpression: string
-            payload: JsonValue
-            taskQueue: string
-            priority: number
-            active: boolean
-            nextFireAt: Date
-            createdAt: Date
-            updatedAt: Date
-          }>(
-            client,
-            `
-          SELECT
-            id,
-            workflow_name AS "workflowName",
-            cron_expression AS "cronExpression",
-            payload,
-            task_queue AS "taskQueue",
-            priority,
-            active,
-            next_fire_at AS "nextFireAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt"
-          FROM workflow_schedules
-          WHERE active = TRUE
-            AND next_fire_at <= now()
-          ORDER BY next_fire_at ASC, created_at ASC
-          FOR UPDATE SKIP LOCKED
-          LIMIT $1
-        `,
-            [args.limit]
+          const scheduleRows = await claimDueSchedulesQuery.run(
+            { limit: args.limit },
+            client
           )
           const now = new Date()
           const fired: WorkflowScheduleRecord[] = []
@@ -2274,16 +1671,12 @@ export const createWorkflowStore = (
             const schedule = mapSchedule(row)
             const nextFireAt = args.getNextFireAt({ schedule, now })
 
-            await queryRows(
-              client,
-              `
-            UPDATE workflow_schedules
-            SET
-              next_fire_at = $2,
-              updated_at = now()
-            WHERE id = $1
-          `,
-              [schedule.id, nextFireAt]
+            await rescheduleAfterFireQuery.run(
+              {
+                id: schedule.id,
+                nextFireAt,
+              },
+              client
             )
             fired.push(schedule)
           }
@@ -2326,102 +1719,72 @@ export const createWorkflowStore = (
       },
       async () => {
         const outcome = await withTransaction(db, async (client) => {
-      const [lockedRunRow] = await queryRows<IRunRow>(
-        client,
-        `
-          SELECT
-            id,
-            parent_run_id AS "parentRunId",
-            parent_step_key AS "parentStepKey",
-            continued_from_run_id AS "continuedFromRunId",
-            branched_from_run_id AS "branchedFromRunId",
-            branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-            branched_from_attempt_id AS "branchedFromAttemptId",
-            superseded_by_run_id AS "supersededByRunId",
-            definition_name AS "definitionName",
-            definition_version AS "definitionVersion",
-            status,
-            current_step_key AS "currentStepKey",
-            input,
-            context,
-            result,
-            error,
-            lease_owner AS "leaseOwner",
-            lease_expires_at AS "leaseExpiresAt",
-            cancel_requested_at AS "cancelRequestedAt",
-            cancel_mode AS "cancelMode",
-            available_at AS "availableAt",
-            created_at AS "createdAt",
-            updated_at AS "updatedAt",
-            completed_at AS "completedAt"
-          FROM workflow_runs
-          WHERE id = $1
-          FOR UPDATE
-        `,
-        [args.run.id]
-      )
+          const [lockedRunRow] = await getRunByIdForUpdateQuery.run(
+            { runId: args.run.id },
+            client
+          )
 
-      if (!lockedRunRow) {
-        return { outcome: "lost_lease" as const, run: null }
-      }
+          if (!lockedRunRow) {
+            return { outcome: "lost_lease" as const, run: null }
+          }
 
-      const lockedRun = mapRun(lockedRunRow)
+          const lockedRun = mapRun(lockedRunRow)
 
-      if (
-        lockedRun.currentStepKey !== args.stepKey ||
-        lockedRun.leaseOwner !== args.workerId ||
-        lockedRun.leaseExpiresAt === null ||
-        lockedRun.leaseExpiresAt.getTime() < Date.now()
-      ) {
-        return { outcome: "lost_lease" as const, run: null }
-      }
+          if (
+            lockedRun.currentStepKey !== args.stepKey ||
+            lockedRun.leaseOwner !== args.workerId ||
+            lockedRun.leaseExpiresAt === null ||
+            lockedRun.leaseExpiresAt.getTime() < Date.now()
+          ) {
+            return { outcome: "lost_lease" as const, run: null }
+          }
 
-      const attempt = await insertAttempt(client, {
-        runId: args.run.id,
-        stepKey: args.stepKey,
-        kind: "forward",
-        input: {
-          workflow: lockedRun.definitionName,
-          step: args.stepKey,
-          input: lockedRun.input,
-          context: lockedRun.context,
-        },
-      })
-      const now = new Date()
-      const context: StepExecutionContext = {
-        run: lockedRun,
-        input: lockedRun.input,
-        context: lockedRun.context,
-        now,
-        attempt: attempt.attempt,
-        idempotencyKey: `${lockedRun.id}:${args.stepKey}`,
-        heartbeat: async () => false,
-        db: {
-          query: async <T extends object>(
-            text: string,
-            values: readonly unknown[] = []
-          ) => {
-            const result = await client.query<T>(text, [...values])
-            return {
-              rows: result.rows as T[],
-            }
-          },
-        },
-        outbox: {
-          enqueue: async (input) => {
-            await enqueueOutbox({
-              runId: lockedRun.id,
-              topic: input.topic,
-              payload: input.payload,
-              client,
-              ...(input.availableAt === undefined
-                ? {}
-                : { availableAt: input.availableAt }),
-            })
-          },
-        },
-        transactional: true,
-      }
+          const attempt = await insertAttempt(client, {
+            runId: args.run.id,
+            stepKey: args.stepKey,
+            kind: "forward",
+            input: {
+              workflow: lockedRun.definitionName,
+              step: args.stepKey,
+              input: lockedRun.input,
+              context: lockedRun.context,
+            },
+          })
+          const now = new Date()
+          const context: StepExecutionContext = {
+            run: lockedRun,
+            input: lockedRun.input,
+            context: lockedRun.context,
+            now,
+            attempt: attempt.attempt,
+            idempotencyKey: `${lockedRun.id}:${args.stepKey}`,
+            heartbeat: async () => false,
+            db: {
+              query: async <T extends object>(
+                text: string,
+                values: readonly unknown[] = []
+              ) => {
+                const result = await client.query<T>(text, [...values])
+                return {
+                  rows: result.rows as T[],
+                }
+              },
+            },
+            outbox: {
+              enqueue: async (input) => {
+                await enqueueOutbox({
+                  runId: lockedRun.id,
+                  topic: input.topic,
+                  payload: input.payload,
+                  client,
+                  ...(input.availableAt === undefined
+                    ? {}
+                    : { availableAt: input.availableAt }),
+                })
+              },
+            },
+            transactional: true,
+          }
 
       await client.query("SAVEPOINT hippo_step_body")
 
@@ -2455,76 +1818,17 @@ export const createWorkflowStore = (
           )
         }
 
-        const [updatedRow] = await queryRows<IRunRow>(
-          client,
-          `
-            WITH updated_run AS (
-              UPDATE workflow_runs
-              SET
-                status = 'queued',
-                current_step_key = $4,
-                context = $5,
-                result = NULL,
-                error = NULL,
-                lease_owner = NULL,
-                lease_expires_at = NULL,
-                available_at = now(),
-                updated_at = now()
-              WHERE id = $1
-                AND current_step_key = $2
-                AND lease_owner = $3
-                AND lease_expires_at >= now()
-              RETURNING
-                id,
-                parent_run_id AS "parentRunId",
-                parent_step_key AS "parentStepKey",
-                continued_from_run_id AS "continuedFromRunId",
-                branched_from_run_id AS "branchedFromRunId",
-                branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-                branched_from_attempt_id AS "branchedFromAttemptId",
-                superseded_by_run_id AS "supersededByRunId",
-                definition_name AS "definitionName",
-                definition_version AS "definitionVersion",
-                status,
-                current_step_key AS "currentStepKey",
-                input,
-                context,
-                result,
-                error,
-                lease_owner AS "leaseOwner",
-                lease_expires_at AS "leaseExpiresAt",
-                cancel_requested_at AS "cancelRequestedAt",
-                cancel_mode AS "cancelMode",
-                available_at AS "availableAt",
-                created_at AS "createdAt",
-                updated_at AS "updatedAt",
-                completed_at AS "completedAt"
-            ), updated_attempt AS (
-              UPDATE workflow_step_attempts
-              SET
-                status = 'completed',
-                output = $6,
-                error = NULL,
-                completed_at = now(),
-                updated_at = now()
-              WHERE id = $7
-                AND run_id IN (SELECT id FROM updated_run)
-            ), inserted_event AS (
-              INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-              SELECT id, $2, 'step.completed', jsonb_build_object('nextStepKey', $4)
-              FROM updated_run
-            )
-            SELECT * FROM updated_run
-          `,
-          [
-            lockedRun.id,
-            args.stepKey,
-            args.workerId,
+        const [updatedRow] = await completeTransactionalTaskQuery.run(
+          {
+            runId: lockedRun.id,
+            stepKey: args.stepKey,
+            workerId: args.workerId,
             nextStepKey,
-            args.mergeContext(lockedRun.context, result.patch),
-            result.output ?? null,
-            attempt.id,
-          ]
+            context: args.mergeContext(lockedRun.context, result.patch),
+            output: result.output ?? null,
+            attemptId: attempt.id,
+          },
+          client
         )
 
         if (!updatedRow) {
@@ -2555,75 +1859,16 @@ export const createWorkflowStore = (
             attempt: attempt.attempt,
             retryPolicy,
           })
-          const [updatedRow] = await queryRows<IRunRow>(
-            client,
-            `
-              WITH updated_run AS (
-                UPDATE workflow_runs
-                SET
-                  status = 'queued',
-                  current_step_key = $2,
-                  error = $4,
-                  lease_owner = NULL,
-                  lease_expires_at = NULL,
-                  available_at = $5,
-                  updated_at = now(),
-                  completed_at = NULL
-                WHERE id = $1
-                  AND current_step_key = $2
-                  AND lease_owner = $3
-                  AND lease_expires_at >= now()
-                RETURNING
-                  id,
-                  parent_run_id AS "parentRunId",
-                  parent_step_key AS "parentStepKey",
-                  continued_from_run_id AS "continuedFromRunId",
-                  branched_from_run_id AS "branchedFromRunId",
-                  branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-                  branched_from_attempt_id AS "branchedFromAttemptId",
-                  superseded_by_run_id AS "supersededByRunId",
-                  definition_name AS "definitionName",
-                  definition_version AS "definitionVersion",
-                  status,
-                  current_step_key AS "currentStepKey",
-                  input,
-                  context,
-                  result,
-                  error,
-                  lease_owner AS "leaseOwner",
-                  lease_expires_at AS "leaseExpiresAt",
-                  cancel_requested_at AS "cancelRequestedAt",
-                  cancel_mode AS "cancelMode",
-                  available_at AS "availableAt",
-                  created_at AS "createdAt",
-                  updated_at AS "updatedAt",
-                  completed_at AS "completedAt"
-              ), updated_attempt AS (
-                UPDATE workflow_step_attempts
-                SET
-                  status = 'failed',
-                  output = NULL,
-                  error = $4,
-                  completed_at = now(),
-                  updated_at = now()
-                WHERE id = $6
-                  AND run_id IN (SELECT id FROM updated_run)
-              ), inserted_event AS (
-                INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-                SELECT id, $2, 'step.retry_scheduled',
-                  jsonb_build_object('availableAt', to_jsonb($5))
-                FROM updated_run
-              )
-              SELECT * FROM updated_run
-            `,
-            [
-              lockedRun.id,
-              args.stepKey,
-              args.workerId,
-              errorPayload,
+          const [updatedRow] = await retryTransactionalTaskQuery.run(
+            {
+              runId: lockedRun.id,
+              stepKey: args.stepKey,
+              workerId: args.workerId,
+              error: errorPayload,
               availableAt,
-              attempt.id,
-            ]
+              attemptId: attempt.id,
+            },
+            client
           )
 
           if (!updatedRow) {
@@ -2636,66 +1881,15 @@ export const createWorkflowStore = (
           }
         }
 
-        const [updatedRow] = await queryRows<IRunRow>(
-          client,
-          `
-            WITH updated_run AS (
-              UPDATE workflow_runs
-              SET
-                status = 'failed',
-                error = $4,
-                lease_owner = NULL,
-                lease_expires_at = NULL,
-                available_at = now(),
-                updated_at = now(),
-                completed_at = now()
-              WHERE id = $1
-                AND current_step_key = $2
-                AND lease_owner = $3
-                AND lease_expires_at >= now()
-              RETURNING
-                id,
-                parent_run_id AS "parentRunId",
-                parent_step_key AS "parentStepKey",
-                continued_from_run_id AS "continuedFromRunId",
-                branched_from_run_id AS "branchedFromRunId",
-                branched_from_attempt_run_id AS "branchedFromAttemptRunId",
-                branched_from_attempt_id AS "branchedFromAttemptId",
-                superseded_by_run_id AS "supersededByRunId",
-                definition_name AS "definitionName",
-                definition_version AS "definitionVersion",
-                status,
-                current_step_key AS "currentStepKey",
-                input,
-                context,
-                result,
-                error,
-                lease_owner AS "leaseOwner",
-                lease_expires_at AS "leaseExpiresAt",
-                cancel_requested_at AS "cancelRequestedAt",
-                cancel_mode AS "cancelMode",
-                available_at AS "availableAt",
-                created_at AS "createdAt",
-                updated_at AS "updatedAt",
-                completed_at AS "completedAt"
-            ), updated_attempt AS (
-              UPDATE workflow_step_attempts
-              SET
-                status = 'failed',
-                output = NULL,
-                error = $4,
-                completed_at = now(),
-                updated_at = now()
-              WHERE id = $5
-                AND run_id IN (SELECT id FROM updated_run)
-            ), inserted_event AS (
-              INSERT INTO workflow_events (run_id, step_key, event_type, payload)
-              SELECT id, $2, 'step.failed', $4
-              FROM updated_run
-            )
-            SELECT * FROM updated_run
-          `,
-          [lockedRun.id, args.stepKey, args.workerId, errorPayload, attempt.id]
+        const [updatedRow] = await failTransactionalTaskQuery.run(
+          {
+            runId: lockedRun.id,
+            stepKey: args.stepKey,
+            workerId: args.workerId,
+            error: errorPayload,
+            attemptId: attempt.id,
+          },
+          client
         )
 
         if (!updatedRow) {
