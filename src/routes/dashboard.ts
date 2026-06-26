@@ -1,9 +1,11 @@
 import type { JsonValue } from "../types/json.js"
 import type {
+  WorkflowDefinition,
   WorkflowEventRecord,
   WorkflowRunRecord,
   WorkflowStepAttemptRecord,
 } from "../types/workflow.js"
+import { getWorkflowMermaidNodeIds } from "../lib/workflow-definition.js"
 
 const dashboardRunPath = (runId: string) => `/dashboard/runs/${runId}`
 
@@ -21,6 +23,9 @@ const formatDateTime = (value: Date | null) =>
 const formatJson = (value: JsonValue) =>
   escapeHtml(JSON.stringify(value, null, 2) ?? "null")
 
+const stringifyHtmlAttribute = (value: unknown) =>
+  escapeHtml(JSON.stringify(value))
+
 const statusToneByRun = {
   queued: "tone-queued",
   running: "tone-running",
@@ -31,8 +36,15 @@ const statusToneByRun = {
   canceled: "tone-canceled",
 } as const
 
-const renderMermaidMount = (graph: string) =>
-  `<div class="mermaid" data-graph="${escapeHtml(graph)}"></div>`
+const renderMermaidMount = (
+  graph: string,
+  nodeActions?: Record<string, { label: string; stepKey?: string; href?: string }>
+) =>
+  `<div class="mermaid" data-graph="${escapeHtml(graph)}"${
+    nodeActions === undefined
+      ? ""
+      : ` data-node-actions="${stringifyHtmlAttribute(nodeActions)}"`
+  }></div>`
 
 const renderMermaidBootstrap = () => `<script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
@@ -84,6 +96,84 @@ const renderMermaidBootstrap = () => `<script type="module">
     }
   }
 
+  const applyStepSelection = (stepKey) => {
+    const cards = [...document.querySelectorAll("[data-step-key]")]
+    let firstMatch = null
+
+    for (const card of cards) {
+      const matches = card instanceof HTMLElement && card.dataset.stepKey === stepKey
+      card.classList.toggle("entry-selected", matches)
+
+      if (matches && firstMatch === null && card instanceof HTMLElement) {
+        firstMatch = card
+      }
+    }
+
+    firstMatch?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
+
+  const attachNodeActions = () => {
+    for (const mount of document.querySelectorAll(".mermaid")) {
+      const nodeActionsJson = mount.getAttribute("data-node-actions")
+
+      if (!nodeActionsJson) {
+        continue
+      }
+
+      let nodeActions
+
+      try {
+        nodeActions = JSON.parse(nodeActionsJson)
+      } catch (error) {
+        console.error(error)
+        continue
+      }
+
+      const svg = mount.querySelector("svg")
+
+      if (!(svg instanceof SVGElement)) {
+        continue
+      }
+
+      for (const [nodeId, action] of Object.entries(nodeActions)) {
+        const node = svg.querySelector(
+          "#" + nodeId + ", [id='flowchart-" + nodeId + "'], [id$='-" + nodeId + "']"
+        )
+
+        if (!(node instanceof SVGGElement) || typeof action !== "object" || !action) {
+          continue
+        }
+
+        const payload = action
+        const activate = () => {
+          if (typeof payload.stepKey === "string") {
+            applyStepSelection(payload.stepKey)
+            return
+          }
+
+          if (typeof payload.href === "string") {
+            window.location.assign(payload.href)
+          }
+        }
+
+        node.classList.add("mermaid-node-action")
+        node.setAttribute("tabindex", "0")
+        node.setAttribute(
+          "role",
+          typeof payload.href === "string" ? "link" : "button"
+        )
+        node.setAttribute("aria-label", payload.label ?? "Inspect workflow step")
+        node.addEventListener("click", activate)
+        node.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            activate()
+          }
+        })
+      }
+    }
+  }
+
   const renderMermaids = async () => {
     const isDark = root.classList.contains("dark")
 
@@ -123,6 +213,7 @@ const renderMermaidBootstrap = () => `<script type="module">
       await mermaid.run({
         querySelector: ".mermaid",
       })
+      attachNodeActions()
     } catch (error) {
       renderFallback()
       console.error(error)
@@ -657,6 +748,10 @@ export const renderRunDetailDocument = (args: {
   lineage: string
   run: WorkflowRunRecord | null
   workflowMermaid: string
+  workflowStepActions?: Record<
+    string,
+    { label: string; stepKey?: string; href?: string }
+  >
 }) => `<!doctype html>
 <html lang="en">
   <head>
@@ -747,6 +842,11 @@ export const renderRunDetailDocument = (args: {
         border: 1px solid hsl(var(--border));
         border-radius: calc(var(--radius) - 2px);
         background: hsl(var(--card));
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+      .entry-selected {
+        border-color: hsl(var(--ring));
+        box-shadow: 0 0 0 1px hsl(var(--ring));
       }
       .entry strong {
         display: block;
@@ -773,6 +873,14 @@ export const renderRunDetailDocument = (args: {
       }
 
       .mermaid { min-width: 560px; }
+      .mermaid-node-action { cursor: pointer; }
+      .mermaid-node-action:focus-visible rect,
+      .mermaid-node-action:focus-visible path,
+      .mermaid-node-action:hover rect,
+      .mermaid-node-action:hover path {
+        stroke: hsl(var(--ring));
+        stroke-width: 2px;
+      }
       .mermaid-fallback {
         white-space: pre-wrap;
         font-family: ui-monospace, "SFMono-Regular", monospace;
@@ -847,7 +955,7 @@ export const renderRunDetailDocument = (args: {
             <h4 class="section-title" style="margin-top: 1.5rem;">Context</h4>
             <pre>${formatJson(args.run?.context ?? {})}</pre>
             <h4 class="section-title" style="margin-top: 1.5rem;">Workflow map</h4>
-            <div class="diagram-shell">${renderMermaidMount(args.workflowMermaid)}</div>
+            <div class="diagram-shell">${renderMermaidMount(args.workflowMermaid, args.workflowStepActions)}</div>
           </div>
         </article>
         <article class="card">
@@ -905,8 +1013,9 @@ export const renderAttemptCard = (
   attempt: Pick<
     WorkflowStepAttemptRecord,
     "kind" | "attempt" | "completedAt" | "error" | "output" | "startedAt" | "status" | "stepKey"
-  >
-) => `<article class="entry">
+  >,
+  index = 0
+) => `<article class="entry" data-step-key="${escapeHtml(attempt.stepKey)}" data-step-attempt-index="${String(index)}">
   <strong>${escapeHtml(attempt.stepKey)} · ${escapeHtml(attempt.kind === "compensate" ? "compensate" : "attempt")} ${String(attempt.attempt)}</strong>
   <time>${escapeHtml(formatDateTime(attempt.startedAt))} → ${escapeHtml(formatDateTime(attempt.completedAt))}</time>
   <pre>${formatJson({
@@ -951,3 +1060,16 @@ export const renderLineageRunCard = (
     supersededByRunId: run.supersededByRunId,
   })}</pre>
 </article>`
+
+export const createWorkflowStepActions = (
+  workflow: WorkflowDefinition
+) =>
+  Object.fromEntries(
+    Object.entries(getWorkflowMermaidNodeIds(workflow)).map(([stepKey, nodeId]) => [
+      nodeId,
+      {
+        label: `Inspect ${stepKey}`,
+        stepKey,
+      },
+    ])
+  )

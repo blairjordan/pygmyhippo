@@ -1839,4 +1839,109 @@ describe("workflow engine", () => {
     expect(completed?.status).toBe("completed")
     expect(completed?.context.saved).toBe(true)
   })
+
+  it("replaces workflow definitions while preserving pinned versions", async () => {
+    const workflowV1 = defineWorkflow({
+      name: "hot-reloadable",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep({
+          label: "Version one",
+        }),
+      },
+    })
+    const workflowV2 = defineWorkflow({
+      name: "hot-reloadable",
+      version: 2,
+      startAt: "done",
+      steps: {
+        done: endStep({
+          label: "Version two",
+        }),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [workflowV1],
+      metrics: createMetrics(),
+      store: createStoreStub(),
+    })
+
+    engine.replaceDefinitions([workflowV2])
+
+    expect(engine.getWorkflow("hot-reloadable").version).toBe(2)
+    expect(engine.getWorkflow("hot-reloadable", 1).version).toBe(1)
+    expect(
+      engine.listWorkflowVersions().map((workflow) => workflow.version)
+    ).toEqual([1, 2])
+  })
+
+  it("does not overwrite an already-registered version during hot reload", async () => {
+    const original = defineWorkflow({
+      name: "same-version",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep({
+          label: "Original",
+        }),
+      },
+    })
+    const edited = defineWorkflow({
+      name: "same-version",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep({
+          label: "Edited",
+        }),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [original],
+      metrics: createMetrics(),
+      store: createStoreStub(),
+    })
+
+    engine.replaceDefinitions([edited])
+
+    expect(engine.getWorkflow("same-version", 1).steps.done).toMatchObject({
+      label: "Original",
+    })
+    expect(engine.getWorkflow("same-version").steps.done).toMatchObject({
+      label: "Original",
+    })
+  })
+
+  it("removes deleted workflows from the latest registration set", async () => {
+    const keep = defineWorkflow({
+      name: "keep",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep(),
+      },
+    })
+    const remove = defineWorkflow({
+      name: "remove",
+      version: 1,
+      startAt: "done",
+      steps: {
+        done: endStep(),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [keep, remove],
+      metrics: createMetrics(),
+      store: createStoreStub(),
+    })
+
+    engine.replaceDefinitions([keep])
+
+    expect(engine.listWorkflows().map((workflow) => workflow.name)).toEqual([
+      "keep",
+    ])
+    expect(engine.hasWorkflow("remove")).toBe(false)
+    expect(engine.getWorkflow("remove", 1).name).toBe("remove")
+  })
 })

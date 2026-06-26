@@ -19,6 +19,7 @@ import type { WorkflowEngine } from "../lib/workflow-engine.js"
 import type { WorkflowStore } from "../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import {
+  createWorkflowStepActions,
   renderAttemptCard,
   renderDashboardDocument,
   renderDashboardRun,
@@ -401,7 +402,7 @@ export const createWorkflowRoutes = (args: {
         const document = renderRunDetailDocument({
           attempts:
             attempts.length > 0
-              ? attempts.map(renderAttemptCard).join("")
+              ? attempts.map((attempt, index) => renderAttemptCard(attempt, index)).join("")
               : '<div class="entry">No attempts recorded yet.</div>',
           events:
             events.length > 0
@@ -418,6 +419,7 @@ export const createWorkflowRoutes = (args: {
               ? {}
               : { highlightedStepKey: run.currentStepKey }),
           }),
+          workflowStepActions: createWorkflowStepActions(workflow),
         })
 
         reply.header("content-type", "text/html; charset=utf-8")

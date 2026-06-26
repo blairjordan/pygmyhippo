@@ -93,6 +93,14 @@ const formatLabel = (workflow: WorkflowDefinition, stepKey: string) => {
 const getNodeId = (stepKey: string, index: number) =>
   `step_${String(index)}_${stepKey.replaceAll(/[^a-zA-Z0-9_]/g, "_")}`
 
+export const getWorkflowMermaidNodeIds = (workflow: WorkflowDefinition) =>
+  Object.fromEntries(
+    Object.keys(workflow.steps).map((stepKey, index) => [
+      stepKey,
+      getNodeId(stepKey, index),
+    ])
+  )
+
 const getEdges = (workflow: WorkflowDefinition) =>
   Object.entries(workflow.steps).flatMap(([stepKey, step]) =>
     getStaticTargets(step).map((to) => ({ from: stepKey, to }))
@@ -105,12 +113,7 @@ export const renderWorkflowAsMermaid = (
   } = {}
 ) => {
   const lines = ["flowchart TD"]
-  const nodeIds = new Map(
-    Object.keys(workflow.steps).map((stepKey, index) => [
-      stepKey,
-      getNodeId(stepKey, index),
-    ])
-  )
+  const nodeIds = new Map(Object.entries(getWorkflowMermaidNodeIds(workflow)))
 
   for (const [stepKey, step] of Object.entries(workflow.steps)) {
     const label = formatLabel(workflow, stepKey)

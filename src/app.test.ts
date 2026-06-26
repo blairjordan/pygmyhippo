@@ -400,6 +400,8 @@ describe("app routes", () => {
     expect(response.body).toContain("Lineage")
     expect(response.body).toContain('data-theme-toggle')
     expect(response.body).toContain('class="mermaid"')
+    expect(response.body).toContain("data-node-actions")
+    expect(response.body).toContain('data-step-key="send-email"')
     expect(response.body).toContain("class step_5_delivery_confirmation currentStep")
     expect(response.body).toContain("/v1/runs/run-1/stream?afterEventId=1")
 
@@ -778,6 +780,12 @@ describe("app routes", () => {
         return true
       },
       listWorkflows() {
+        return []
+      },
+      listWorkflowVersions() {
+        return []
+      },
+      replaceDefinitions() {
         return []
       },
       async resumeWait() {

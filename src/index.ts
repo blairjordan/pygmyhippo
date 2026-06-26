@@ -11,10 +11,14 @@ import { startOutboxLoop } from "./lib/outbox.js"
 import { startRecoveryLoop } from "./lib/recovery.js"
 import { startScheduleLoop } from "./lib/scheduler.js"
 import { createHippoTracer } from "./lib/tracing.js"
+import {
+  loadWorkflowDefinitions,
+  startWorkflowDevReloader,
+  workflowModulePath,
+} from "./lib/workflow-loader.js"
 import { startWorkerLoop } from "./lib/worker.js"
 import { createWorkflowEngine } from "./lib/workflow-engine.js"
 import { createWorkflowStore } from "./lib/workflow-store.js"
-import { workflows } from "./workflows/index.js"
 
 const parseTaskQueues = (value: string) =>
   value
@@ -24,6 +28,8 @@ const parseTaskQueues = (value: string) =>
 
 const main = async () => {
   const config = getConfig()
+  const workflowDefinitions =
+    await loadWorkflowDefinitions(workflowModulePath())
   const sql = createDatabase(config)
   const metrics = createMetrics()
   const tracer = createHippoTracer()
@@ -34,7 +40,7 @@ const main = async () => {
     tracer,
   })
   const engine = createWorkflowEngine({
-    definitions: workflows,
+    definitions: workflowDefinitions,
     metrics,
     store,
     tracer,
@@ -54,6 +60,14 @@ const main = async () => {
     store,
     tracer,
   })
+  const stopWorkflowReload =
+    config.HIPPO_ENV === "dev"
+      ? await startWorkflowDevReloader({
+          engine,
+          logger: app.log,
+          modulePath: workflowModulePath(),
+        })
+      : async () => undefined
 
   const stopWorker = startWorkerLoop({
     engine,
@@ -99,6 +113,7 @@ const main = async () => {
   })
 
   const shutdown = async () => {
+    await stopWorkflowReload()
     await stopWorker()
     await stopRecovery()
     await stopScheduler()

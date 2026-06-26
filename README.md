@@ -14,7 +14,7 @@ Hippo is built for teams that want durable workflow orchestration without adding
 - The built-in dashboard and SSE event streams make workflow state visible without standing up a separate frontend.
 - Operator queries now support filtered run listing plus lineage inspection for rewind, fork, continue-as-new, and parent-child chains.
 - TypeScript-first workflow definitions keep business logic in ordinary application code instead of pushing teams into a separate workflow DSL.
-- Version-pinned execution keeps in-flight runs on the exact workflow definition version they started with while new starts pick the latest registered version.
+- Version-pinned execution keeps in-flight runs on the exact workflow definition version they started with while new starts pick the latest registered version. Once a version is registered in-process, hot reload does not mutate that version's code.
 - Hot audit tables are hash-partitioned by `run_id`, so run-scoped history reads stay prune-friendly as attempts and events grow.
 
 ## Where It Fits
@@ -127,6 +127,7 @@ curl -X POST \
 The generated app includes:
 
 - built-in dashboard with Mermaid workflow renders and SSE event tails
+- clickable Mermaid step nodes on run detail pages for direct attempt inspection
 - filtered operator run listing plus lineage inspection APIs
 - durable retries with exponential backoff, jitter, and max delay cap
 - graceful cancel, hard terminate, and compensation hooks
@@ -170,7 +171,10 @@ npm run hippo:dev
 ```
 
 This starts local Postgres via `docker compose`, waits for the database port,
-runs migrations, then launches the API and worker with `tsx watch`.
+runs migrations, then launches the API and worker.
+In dev, changes under `src/workflows/*.ts` hot-reload registered definitions
+without restarting the process. To change workflow behavior safely for new runs
+while preserving pinned in-flight runs, bump the workflow `version`.
 
 Environment modes:
 

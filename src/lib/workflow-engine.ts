@@ -70,6 +70,48 @@ const createDefinitionRegistry = (definitions: WorkflowDefinition[]): Definition
   }
 }
 
+const listDefinitions = (registry: DefinitionRegistry) => [...registry.byVersion.values()]
+
+const replaceDefinitionRegistry = (
+  current: DefinitionRegistry,
+  nextDefinitions: WorkflowDefinition[]
+) => {
+  const nextByVersion = new Map(current.byVersion)
+
+  for (const definition of nextDefinitions) {
+    const versionKey = getDefinitionVersionKey(definition.name, definition.version)
+
+    if (!nextByVersion.has(versionKey)) {
+      nextByVersion.set(versionKey, definition)
+    }
+  }
+
+  const latestByName = new Map<string, WorkflowDefinition>()
+
+  for (const definition of nextDefinitions) {
+    const pinnedDefinition = nextByVersion.get(
+      getDefinitionVersionKey(definition.name, definition.version)
+    )
+
+    if (!pinnedDefinition) {
+      throw new Error(
+        `Workflow definition "${definition.name}" version ${String(definition.version)} is not registered`
+      )
+    }
+
+    const latest = latestByName.get(definition.name)
+
+    if (!latest || pinnedDefinition.version > latest.version) {
+      latestByName.set(definition.name, pinnedDefinition)
+    }
+  }
+
+  return {
+    byVersion: nextByVersion,
+    latestByName,
+  }
+}
+
 const getDefinition = (
   registry: DefinitionRegistry,
   name: string,
@@ -1123,7 +1165,7 @@ export const createWorkflowEngine = (args: {
   store: WorkflowStore
   tracer?: HippoTracer
 }) => {
-  const definitions = createDefinitionRegistry(args.definitions)
+  let definitions = createDefinitionRegistry(args.definitions)
   const tracer = args.tracer ?? createHippoTracer()
 
   const startRun = async (input: {
@@ -1316,6 +1358,11 @@ export const createWorkflowEngine = (args: {
     hasWorkflow: (workflowName: string, version?: number) =>
       getDefinition(definitions, workflowName, version) !== null,
     listWorkflows: () => [...definitions.latestByName.values()],
+    listWorkflowVersions: () => listDefinitions(definitions),
+    replaceDefinitions: (nextDefinitions: WorkflowDefinition[]) => {
+      definitions = replaceDefinitionRegistry(definitions, nextDefinitions)
+      return [...definitions.latestByName.values()]
+    },
     resumeWait,
     runCompensation,
     startRun,

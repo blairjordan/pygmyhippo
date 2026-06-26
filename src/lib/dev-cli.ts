@@ -62,7 +62,7 @@ export const createHippoDevPlan = (args: { platform: NodeJS.Platform }) =>
     {
       kind: "serve",
       command: "npx",
-      args: ["tsx", "watch", "src/index.ts"],
+      args: ["tsx", "src/index.ts"],
     },
   ] as const satisfies readonly DevCommandStep[]
 

@@ -24,7 +24,7 @@ describe("dev cli helpers", () => {
       {
         kind: "serve",
         command: "npx",
-        args: ["tsx", "watch", "src/index.ts"],
+        args: ["tsx", "src/index.ts"],
       },
     ])
   })

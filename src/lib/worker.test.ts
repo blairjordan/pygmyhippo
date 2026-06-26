@@ -22,6 +22,12 @@ describe("worker loop", () => {
       listWorkflows() {
         return []
       },
+      listWorkflowVersions() {
+        return []
+      },
+      replaceDefinitions() {
+        return []
+      },
       async runCompensation() {
         return null
       },
@@ -62,6 +68,12 @@ describe("worker loop", () => {
         return true
       },
       listWorkflows() {
+        return []
+      },
+      listWorkflowVersions() {
+        return []
+      },
+      replaceDefinitions() {
         return []
       },
       async runCompensation() {

@@ -53,6 +53,12 @@ describe("scheduler", () => {
       listWorkflows() {
         return []
       },
+      listWorkflowVersions() {
+        return []
+      },
+      replaceDefinitions() {
+        return []
+      },
       async runCompensation() {
         return null
       },
