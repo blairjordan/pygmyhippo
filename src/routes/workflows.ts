@@ -19,14 +19,16 @@ import type { WorkflowEngine } from "../lib/workflow-engine.js"
 import type { WorkflowStore } from "../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import {
+  RUNS_PAGE_SIZE,
   createWorkflowStepActions,
   renderAttemptCard,
-  renderDashboardDocument,
-  renderDashboardRun,
+  renderDefinitionDetailDocument,
+  renderDefinitionsIndexDocument,
   renderEventCard,
   renderLineageRunCard,
   renderRunDetailDocument,
-  renderWorkflowCard,
+  renderRunsIndexDocument,
+  resolveStatusFilter,
 } from "./dashboard.js"
 
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
@@ -323,48 +325,155 @@ export const createWorkflowRoutes = (args: {
   tracer: HippoTracer
 }): FastifyPluginAsync => async (app) => {
   app.get("/dashboard", async (request, reply) => {
+    await requireApiAuth(app, request, args.auth, args.tracer)
+    reply.redirect("/dashboard/runs", 302)
+  })
+
+  const runsListQuerySchema = z.object({
+    status: z.string().optional(),
+    definition: z.string().min(1).optional(),
+    search: z.string().min(1).optional(),
+    afterUpdatedAt: z.string().optional(),
+    afterId: z.string().optional(),
+  })
+
+  app.get("/dashboard/runs", async (request, reply) => {
     return traceAuthedRequest({
       app,
       auth: args.auth,
       request,
       tracer: args.tracer,
       trace: {
-        name: "hippo.http.dashboard_overview",
+        name: "hippo.http.dashboard_runs_index",
         attributes: createRouteTraceAttributes({
           method: request.method,
-          operation: "http.dashboard_overview",
-          route: "/dashboard",
+          operation: "http.dashboard_runs_index",
+          route: "/dashboard/runs",
         }),
       },
       run: async () => {
-        const [activeRuns, failedRuns] = await Promise.all([
-          args.store.listActiveRuns(25),
-          args.store.listFailedRuns(25),
-        ])
-        const workflows = args.engine.listWorkflows()
-        const document = renderDashboardDocument({
-          activeRunsHtml:
-            activeRuns.length > 0
-              ? activeRuns.map(renderDashboardRun).join("")
-              : '<div class="empty">No active runs.</div>',
-          failedRunsHtml:
-            failedRuns.length > 0
-              ? failedRuns.map(renderDashboardRun).join("")
-              : '<div class="empty">No failed runs.</div>',
-          workflowsHtml:
-            workflows.length > 0
-              ? workflows
-                  .map((workflow) =>
-                    renderWorkflowCard({
-                      mermaid: renderWorkflowAsMermaid(workflow),
-                      workflowName: workflow.name,
-                      ...(workflow.title === undefined
-                        ? {}
-                        : { workflowTitle: workflow.title }),
-                    })
-                  )
-                  .join("")
-              : '<div class="empty">No workflows are registered.</div>',
+        const query = runsListQuerySchema.parse(request.query)
+        const statusFilter = resolveStatusFilter(query.status)
+
+        const afterUpdatedAt =
+          query.afterUpdatedAt && query.afterId
+            ? new Date(query.afterUpdatedAt)
+            : undefined
+
+        const limit = RUNS_PAGE_SIZE
+        const runs = await args.store.listRunsPaginated({
+          limit: limit + 1,
+          ...(statusFilter.statuses.length > 0
+            ? { statuses: statusFilter.statuses }
+            : {}),
+          ...(query.definition === undefined
+            ? {}
+            : { workflowName: query.definition }),
+          ...(query.search === undefined ? {} : { search: query.search }),
+          ...(afterUpdatedAt && query.afterId
+            ? { afterUpdatedAt, afterId: query.afterId }
+            : {}),
+        })
+
+        const hasMore = runs.length > limit
+        const pageRuns = hasMore ? runs.slice(0, limit) : runs
+        const lastRun = pageRuns.at(-1)
+
+        const document = renderRunsIndexDocument({
+          runs: pageRuns,
+          workflows: args.engine.listWorkflows().map((workflow) => ({
+            name: workflow.name,
+            ...(workflow.title === undefined ? {} : { title: workflow.title }),
+          })),
+          filters: {
+            status: statusFilter.id,
+            definition: query.definition,
+            search: query.search,
+          },
+          nextCursor:
+            hasMore && lastRun
+              ? { afterUpdatedAt: lastRun.updatedAt, afterId: lastRun.id }
+              : null,
+        })
+
+        reply.header("content-type", "text/html; charset=utf-8")
+        return document
+      },
+    })
+  })
+
+  app.get("/dashboard/definitions", async (request, reply) => {
+    return traceAuthedRequest({
+      app,
+      auth: args.auth,
+      request,
+      tracer: args.tracer,
+      trace: {
+        name: "hippo.http.dashboard_definitions_index",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.dashboard_definitions_index",
+          route: "/dashboard/definitions",
+        }),
+      },
+      run: async () => {
+        const workflows = args.engine.listWorkflows().map((workflow) => ({
+          name: workflow.name,
+          ...(workflow.title === undefined ? {} : { title: workflow.title }),
+          stepCount: Object.keys(workflow.steps).length,
+        }))
+
+        const document = renderDefinitionsIndexDocument({ workflows })
+        reply.header("content-type", "text/html; charset=utf-8")
+        return document
+      },
+    })
+  })
+
+  app.get("/dashboard/definitions/:workflowName", async (request, reply) => {
+    return traceAuthedRequest({
+      app,
+      auth: args.auth,
+      request,
+      tracer: args.tracer,
+      trace: {
+        name: "hippo.http.dashboard_definition_detail",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.dashboard_definition_detail",
+          route: "/dashboard/definitions/:workflowName",
+        }),
+      },
+      run: async () => {
+        const params = z
+          .object({ workflowName: z.string().min(1) })
+          .parse(request.params)
+        const workflow = args.engine
+          .listWorkflows()
+          .find((candidate) => candidate.name === params.workflowName)
+
+        if (!workflow) {
+          throw app.httpErrors.notFound(
+            `Workflow "${params.workflowName}" not found`
+          )
+        }
+
+        const runs = await args.store.listRunsPaginated({
+          limit: 20,
+          workflowName: workflow.name,
+        })
+
+        const document = renderDefinitionDetailDocument({
+          workflow: {
+            name: workflow.name,
+            ...(workflow.title === undefined ? {} : { title: workflow.title }),
+          },
+          mermaid: renderWorkflowAsMermaid(workflow),
+          nodeActions: createWorkflowStepActions(workflow, {
+            hrefByStepKey: () =>
+              `/dashboard/runs?definition=${encodeURIComponent(workflow.name)}`,
+          }),
+          runs,
         })
 
         reply.header("content-type", "text/html; charset=utf-8")

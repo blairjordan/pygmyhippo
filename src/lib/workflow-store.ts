@@ -1823,6 +1823,86 @@ export const createWorkflowStore = (
     return rows.map(mapRun)
   }
 
+  const listRunsPaginated = async (args: {
+    limit: number
+    statuses?: WorkflowRunStatus[]
+    workflowName?: string
+    search?: string
+    afterUpdatedAt?: Date
+    afterId?: string
+  }) => {
+    const conditions: string[] = []
+    const values: unknown[] = []
+    const placeholder = () => `$${String(values.length)}`
+
+    if (args.statuses && args.statuses.length > 0) {
+      values.push(args.statuses)
+      conditions.push(`status::text = ANY(${placeholder()}::text[])`)
+    }
+
+    if (args.workflowName) {
+      values.push(args.workflowName)
+      conditions.push(`definition_name = ${placeholder()}::text`)
+    }
+
+    if (args.search) {
+      values.push(`%${args.search}%`)
+      const search = `${placeholder()}::text`
+      conditions.push(
+        `(id::text ILIKE ${search} OR definition_name ILIKE ${search} OR COALESCE(current_step_key, '') ILIKE ${search})`
+      )
+    }
+
+    if (args.afterUpdatedAt && args.afterId) {
+      values.push(args.afterUpdatedAt)
+      const ts = `${placeholder()}::timestamptz`
+      values.push(args.afterId)
+      const id = `${placeholder()}::uuid`
+      conditions.push(`(updated_at, id) < (${ts}, ${id})`)
+    }
+
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(args.limit)))
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
+
+    const text = `
+      SELECT
+        id,
+        parent_run_id AS "parentRunId",
+        parent_step_key AS "parentStepKey",
+        continued_from_run_id AS "continuedFromRunId",
+        branched_from_run_id AS "branchedFromRunId",
+        branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+        branched_from_attempt_id AS "branchedFromAttemptId",
+        superseded_by_run_id AS "supersededByRunId",
+        definition_name AS "definitionName",
+        definition_version AS "definitionVersion",
+        task_queue AS "taskQueue",
+        priority,
+        status,
+        current_step_key AS "currentStepKey",
+        input,
+        context,
+        result,
+        error,
+        lease_owner AS "leaseOwner",
+        lease_expires_at AS "leaseExpiresAt",
+        cancel_requested_at AS "cancelRequestedAt",
+        cancel_mode AS "cancelMode",
+        available_at AS "availableAt",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt",
+        completed_at AS "completedAt"
+      FROM workflow_runs
+      ${where}
+      ORDER BY updated_at DESC, id DESC
+      LIMIT ${String(safeLimit)}
+    `
+
+    const result = await db.query<IRunRow>(text, values as unknown[] as never[])
+    return result.rows.map(mapRun)
+  }
+
   const listRunLineage = async (runId: string) => {
     const rows = await listRunLineageQuery.run({ runId }, db)
     return rows.flatMap((row) => {
@@ -2883,6 +2963,7 @@ export const createWorkflowStore = (
     listFailedRuns,
     listRunLineage,
     listRuns,
+    listRunsPaginated,
     listSchedules,
     listStuckRuns,
     markOutboxDelivered,

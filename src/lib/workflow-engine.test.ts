@@ -779,6 +779,9 @@ const createStoreStub = () => {
     async listRuns() {
       return [...runs.values()]
     },
+    async listRunsPaginated() {
+      return [...runs.values()]
+    },
     async branchRun() {
       throw new Error("not used")
     },

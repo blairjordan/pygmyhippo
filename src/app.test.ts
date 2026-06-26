@@ -156,6 +156,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async listRuns() {
     return []
   },
+  async listRunsPaginated() {
+    return []
+  },
   async listSchedules() {
     return []
   },
@@ -314,6 +317,8 @@ describe("app routes", () => {
     expect(response.body).toContain("Workflow definitions")
     expect(response.body).toContain('data-theme-toggle')
     expect(response.body).toContain('class="mermaid"')
+    expect(response.body).toContain("data-node-actions")
+    expect(response.body).toContain('/v1/workflows/demo-delivery/render')
     expect(response.body).toContain("hippo-dashboard-theme")
     expect(response.body).toContain("cdn.jsdelivr.net/npm/mermaid")
   })
