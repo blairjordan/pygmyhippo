@@ -15,11 +15,11 @@ Resolved product decisions
 - Inline JSON payloads are acceptable for normal control-plane data; large blobs should be stored externally and referenced.
 
 Next up (ordered, work top-down)
-1. Task queues + priority                                          — next runtime routing primitive
-2. Zod step IO + OTel spans                                        — DX polish
-3. Continue-as-new + Time-travel rewind/fork                       — schema-touching, batch with partitioning
+1. Query/operator surfaces                                         — richer run listing, search, and admin workflow
+2. OTel spans + deeper observability                               — production diagnostics
+3. Time-travel rewind/fork                                         — major operator unlock
 4. Partition workflow_step_attempts + workflow_events by hash(run_id) — irreversible, do once schema settles
-5. Tier 1 SDK monorepo split + publish                             — package the current surface honestly
+5. Tier 1 SDK monorepo split + publish                             — local public entrypoints exist; publishable packaging still remains
 6. Hot-reload workflow registration in dev                         — tighten local DX loop
 7. Examples directory with realistic workflows                     — prove the primitives on real flows
 8. CLI ergonomics                                                  — operator CLI parity with dashboard
@@ -29,16 +29,16 @@ Wave 0 — Temporal parity claim (small, unblock honest marketing)
   Extend RetryPolicy: { maxAttempts, initialBackoffMs, maxBackoffMs, backoffMultiplier, jitterMs }. Replace getRetryAvailableAt linear formula with exponential + capped + jittered. Default policy preset.
 - [x] Saga / compensate primitive
   Per-task steps can now define `compensate`. On terminal failure or hard terminate, the engine walks completed steps in reverse, persists compensation attempts with `kind = 'compensate'`, retries them under their own policy, and escalates terminal compensation failure as `compensation_failed`.
-- [ ] Task queues + priority
-  Add `task_queue TEXT NOT NULL DEFAULT 'default'` + `priority INT NOT NULL DEFAULT 0` to workflow_runs. Worker registers with one or more queues; claim filters by queue and ORDER BY priority DESC, available_at ASC. Backward-compatible default queue.
+- [x] Task queues + priority
+  Runs and schedules now carry `task_queue` and `priority`. Workers register one or more queues via `HIPPO_TASK_QUEUES`, claim filters by queue, and runnable ordering prefers `priority DESC` before availability time.
 
 Tier 1 — table stakes for DE
 - [x] Signals: push events into a running run
   Durable signal table + route + engine consume-or-open-wait branch + atomic consumeSignalAndResumeWait closing the post-openWait race (commit 31f4f83).
   Optional follow-up: client-supplied dedup_key with unique (run_id, signal_name, dedup_key) for idempotent signal posts.
 - [~] Queries: read live state without mutation
-  Current state: run detail, attempts, events, active/failed/stuck operator queries exist, plus single-run context projection endpoint.
-  Open: richer query helpers and workflow-owned projection contracts for clients that should not consume raw context keys.
+  Current state: run detail, attempts, events, active/failed/stuck operator queries exist, plus filtered `GET /v1/operators/runs`, lineage inspection via `GET /v1/operators/runs/:runId/lineage`, and single-run context projection.
+  Open: workflow-owned projection contracts for clients that should not consume raw context keys, plus pagination/cursor semantics once operator lists get larger.
 - [~] Retry policy per step
   Current state: max attempts, exponential backoff, jitter, max delay cap, and non-retryable error tags are implemented.
   Open: richer retry classification and policy presets.
@@ -58,8 +58,8 @@ Tier 1 — table stakes for DE
 - [x] Step heartbeats for long activities / lease extension
   ctx.heartbeat() updates workflow_runs.lease_expires_at and workflow_step_attempts.last_heartbeat_at under owner+lease guard.
 - [~] Versioning
-  Current state: runs pin workflow definition version.
-  Open: deploy-safe execution for retired code paths and explicit upgrade policy.
+  Current state: runs pin workflow definition version and execution now resolves the exact stored version instead of looking workflows up by name only. New starts pick the latest registered version for a workflow name.
+  Open: deploy-safe execution for retired code paths, operator visibility into missing registered versions, and explicit upgrade policy.
 
 Tier 2 — Postgres-native edge
 - [x] Same-transaction step commit for workflow state + user DB writes
@@ -69,30 +69,26 @@ Tier 2 — Postgres-native edge
   src/lib/notifier.ts: NOTIFY on workflow_runnable channel after run state mutations; worker subscribes via listenForWakeups.
 - [x] Outbox pattern helper
   workflow_outbox table + enqueueOutbox in transactional step ctx + startOutboxLoop drain with topic→handler map.
-- [ ] Partition workflow_step_attempts + workflow_events by hash(run_id)
+- [x] Partition workflow_step_attempts + workflow_events by hash(run_id)
   Why: hot fan-out and long-running workflows grow both tables fast; partitioning gives writes parallelism and lets archival drop partitions wholesale instead of row-deletes.
-  Scope:
-    1. Convert workflow_step_attempts to PARTITION BY HASH (run_id). 16 or 32 child partitions. Same for workflow_events.
-    2. Migration is non-trivial: existing rows must be copied into partitioned table. Cut-over inside a single transaction or use `CREATE TABLE ... PARTITION BY ...` + `INSERT ... SELECT` + atomic rename. Document downtime tradeoffs.
-    3. All unique constraints must include run_id (or be local to a partition). Audit current indexes — primary keys on (id) alone do not work with hash partitioning; switch to (run_id, id) or local indexes per partition.
-    4. Verify hot queries (`getRunAttempts`, `getRunEvents`, `beginStepAttempt`) still hit a single partition. Add EXPLAIN snapshots to test suite.
-    5. Foreign keys: PG supports FK on partitioned tables since 12 but with caveats — re-validate workflow_step_attempts(run_id) -> workflow_runs(id) constraint behavior.
-    6. Worker claim path (workflow_runs) stays unpartitioned for now. Revisit only if claim contention shows up in metrics.
-  Out of scope: tenant-level partitioning (different topic, do after if/when tenancy lands).
-  Acceptance: typecheck + test + lint pass; integration test inserts 10k attempts across 1k runs and verifies partition pruning via EXPLAIN.
+  Current state: both history tables are now hash-partitioned into 16 children by `run_id`, branch lineage stores `(branched_from_attempt_run_id, branched_from_attempt_id)` so the FK remains valid on the partitioned attempts table, and the Postgres integration suite asserts partition pruning via `EXPLAIN`.
+  Follow-up: revisit partition count only if sustained write pressure justifies moving from 16 to 32.
 - [~] Continue-as-new + archival (history bounding)
-  Current state: none.
-  Open: TaskStepResult.continueAsNew option that completes current run and starts a new run with continued_from_run_id link; archival job that moves completed-run events older than N days to workflow_archive_events (or external sink) and deletes from hot tables; declarative partitioning above makes archival a partition-drop.
+  Current state: task steps can now return `continueAsNew`, which atomically completes the current run, starts a fresh run of the same workflow/version, and links it with `continued_from_run_id`.
+  Open: archival job that moves completed-run events older than N days to workflow_archive_events (or external sink) and deletes from hot tables; declarative partitioning above makes archival a partition-drop.
 
 Tier 3 — differentiation
 - [~] Mermaid live render of run state with current step highlighted
   Current state: dashboard renders Mermaid workflow definitions and run detail views with live SSE-backed updates.
   Open: stronger current-step visualization and richer execution overlays on the rendered graph.
-- [ ] Time-travel replay (snapshot rewind / fork — Path A)
-  Add step_seq monotonic column + context_before snapshot on workflow_step_attempts; POST /v1/runs/:runId/rewind { toAttemptId } and POST /v1/runs/:runId/fork { fromAttemptId }; preserve forward events as branched_from.
+- [~] Time-travel replay (snapshot rewind / fork — Path A)
+  Current state: workflow_step_attempts now persist monotonic `step_seq` plus `context_before`, runs persist branching lineage, operator APIs can `rewind` or `fork` a terminal run from a prior forward attempt, and both the dashboard and operator API expose run lineage chains.
+  Open: support for non-terminal rewinds with wait/child cleanup semantics, plus explicit archival/replay UX on top of the branching primitives.
 - [ ] Human-in-the-loop task with URL + expiry
 - [x] Webhook callback waits with built-in HMAC verification
-- [ ] OpenTelemetry spans
+- [~] OpenTelemetry spans
+  Current state: dashboard reads, operator queries, run detail/context reads, SSE setup, start/cancel/retry/rewind/fork, engine start/tick/resume/compensation, worker ticks, scheduler ticks/dispatch, recovery passes, outbox delivery, and major store operations now emit nested OpenTelemetry-compatible spans through a shared tracer.
+  Open: emit richer status/event attributes and publish copy-paste host-process examples for wiring exporters and resource metadata.
 - [~] Typed TypeScript workflows + validated step IO
   Current state: typed workflow definitions exist.
   Open: Zod-validated step inputs and outputs.
@@ -112,6 +108,7 @@ Tier 3.5 — Temporal feature gaps worth filling (lower priority than DX/Wave-0)
 Tier 4 — SDK + packaging (PROMOTED — DX is the pitch, not features)
 - [ ] Tier 1 SDK: TS in-process SDK (ship current capability as a real package)
   Goal: someone can `npm install` hippo, define workflows in their own repo, run a worker + API server, without copy-pasting from this repo. No new runtime features — pure packaging, public API surface, and DX.
+  Current state: local `hippo/sdk`, `hippo/core`, and `hippo/server` entrypoints resolve through the root `exports` map, `packages/core`, `packages/sdk`, and `packages/server` now exist as workspace package previews, and `npm run build` mirrors the compiled runtime into those package directories for local smoke tests.
   Scope:
     1. Split the repo into packages (monorepo, e.g. npm workspaces or pnpm):
        - @hippo/core           engine + store + types (current src/lib + src/types + src/queries + src/sql)
@@ -157,6 +154,19 @@ Tier 4 — SDK + packaging (PROMOTED — DX is the pitch, not features)
 Tier 5 — DX parity with Trigger.dev (this is the actual pitch)
   Driver feedback: "Temporal too complicated to set up. Trigger.dev easier, better local/staging/prod handling."
   Goal: 5 minutes from `git clone` to seeing a workflow execute. Same config working locally, staging, prod with no rewrites.
+  Primary actions to actually earn the simplicity claim:
+    1. Collapse the public mental model toward one primary authoring primitive.
+       Hippo is still workflow/step/engine/store/app-shaped. Keep the power, but add a simpler front door so the default path feels closer to "write one durable task/workflow and run it" instead of assembling multiple concepts first.
+    2. Make scaffolded apps the main path, not repo-first setup.
+       The source-repo flow works, but the productized path should be `npx hippo init` into a fresh app with a working dashboard, example run, and docs that never require reading Hippo internals.
+    3. Finish the package and publish story.
+       Local package previews exist, but simplicity does not count until users can install Hippo cleanly into their own repo without workspace-only caveats.
+    4. Make local dev boringly reliable.
+       `init -> dev -> dashboard -> start run -> inspect state -> signal/wait` should work every time on a fresh machine with no manual recovery, broken migrations, or surprise runtime mismatches.
+    5. Polish the operator UI until it feels product-grade.
+       The built-in dashboard is a core simplicity feature, not a side tool. Mermaid interactions, live state, filters, lineage, and operator actions need to feel trustworthy enough that users do not drop to raw APIs immediately.
+    6. Hide boot wiring from the happy path.
+       Users should not need to think about engine/store/app/worker composition just to get started. Keep the lower-level surfaces for embedding, but bias docs and scaffolds toward the smallest working runtime entrypoint.
 - [~] `npx hippo init` scaffold command
   Current state: scaffold command exists in-repo today via `npm run hippo:init -- <dir>` and generates a runnable starter with `docker-compose.yml`, `.env`, `src/workflows/example.ts`, scripts, and README. The global `npx hippo init` shape stays blocked on packaging/publishing.
   Creates: docker-compose.yml (Postgres + hippo container), .env with safe defaults, src/workflows/example.ts, package.json scripts, README. One command, working demo.

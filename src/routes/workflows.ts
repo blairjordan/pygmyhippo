@@ -44,6 +44,20 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 const jsonObjectSchema: z.ZodType<JsonObject> = z.record(z.string(), jsonValueSchema)
 
+const emptyStringToUndefined = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+const optionalQueryText = z.preprocess(
+  emptyStringToUndefined,
+  z.string().trim().min(1).max(200).optional()
+)
+
 const startRunBodySchema = z.object({
   payload: jsonObjectSchema.default({}),
   taskQueue: z.string().min(1).default("default"),
@@ -61,7 +75,7 @@ const operatorListQuerySchema = z.object({
 const operatorRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   parentRunId: z.uuid().optional(),
-  search: z.string().trim().min(1).max(200).optional(),
+  search: optionalQueryText,
   status: z
     .enum([
       "queued",
@@ -73,8 +87,8 @@ const operatorRunsQuerySchema = z.object({
       "canceled",
     ])
     .optional(),
-  taskQueue: z.string().trim().min(1).max(200).optional(),
-  workflowName: z.string().trim().min(1).max(200).optional(),
+  taskQueue: optionalQueryText,
+  workflowName: optionalQueryText,
 })
 
 const stuckRunsQuerySchema = z.object({
@@ -331,8 +345,8 @@ export const createWorkflowRoutes = (args: {
 
   const runsListQuerySchema = z.object({
     status: z.string().optional(),
-    definition: z.string().min(1).optional(),
-    search: z.string().min(1).optional(),
+    definition: optionalQueryText,
+    search: optionalQueryText,
     afterUpdatedAt: z.string().optional(),
     afterId: z.string().optional(),
   })
