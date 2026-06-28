@@ -4,6 +4,8 @@ export { createHippoTracer } from "./lib/tracing.js"
 export { createWorkflowNotifier } from "./lib/notifier.js"
 export { createWorkflowEngine } from "./lib/workflow-engine.js"
 export { createWorkflowStore, LostLeaseError } from "./lib/workflow-store.js"
+export { runMigrations } from "./lib/migration-runner.js"
+export { migrations } from "./lib/migrations.js"
 
 export type { Database } from "./lib/db.js"
 export type { HippoMetrics } from "./lib/metrics.js"

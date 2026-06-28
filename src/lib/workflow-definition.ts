@@ -1,3 +1,5 @@
+import { z } from "zod"
+import type { JsonValue } from "../types/json.js"
 import type {
   ChildStepDefinition,
   EndStepDefinition,
@@ -7,27 +9,128 @@ import type {
   WaitStepDefinition,
   WorkflowDefinition,
   WorkflowStepDefinition,
+  TaskStepResult,
+  StepExecutionContext,
 } from "../types/workflow.js"
 
 export const taskStep = (definition: TaskStepDefinition): TaskStepDefinition =>
   definition
 
+export function task<
+  TInputSchema extends z.ZodTypeAny = z.ZodTypeAny,
+  TOutputSchema extends z.ZodTypeAny = z.ZodTypeAny
+>(
+  definition: Omit<TaskStepDefinition, "kind" | "run"> & {
+    input?: TInputSchema
+    output?: TOutputSchema
+    run: (
+      context: Omit<StepExecutionContext, "input"> & {
+        input: z.infer<TInputSchema>
+      }
+    ) =>
+      | Promise<
+          | z.infer<TOutputSchema>
+          | (Omit<TaskStepResult, "output"> & { output?: z.infer<TOutputSchema> })
+        >
+      | z.infer<TOutputSchema>
+      | (Omit<TaskStepResult, "output"> & { output?: z.infer<TOutputSchema> })
+  }
+): TaskStepDefinition {
+  const originalRun = definition.run
+
+  const run = async (context: StepExecutionContext): Promise<TaskStepResult> => {
+    let parsedInput: any = context.input
+    if (definition.input) {
+      parsedInput = definition.input.parse(context.input)
+    }
+
+    const rawResult = await originalRun({
+      ...context,
+      input: parsedInput,
+    })
+
+    const isStepResult =
+      rawResult !== null &&
+      typeof rawResult === "object" &&
+      ("patch" in rawResult ||
+        "transition" in rawResult ||
+        "output" in rawResult ||
+        "continueAsNew" in rawResult)
+
+    let finalResult: TaskStepResult
+    if (isStepResult) {
+      finalResult = rawResult as TaskStepResult
+    } else {
+      finalResult = { output: rawResult as JsonValue }
+    }
+
+    if (definition.output && finalResult.output !== undefined && finalResult.output !== null) {
+      finalResult.output = definition.output.parse(finalResult.output) as JsonValue
+    }
+
+    return finalResult
+  }
+
+  const { input, output, ...rest } = definition
+
+  return {
+    kind: "task",
+    ...rest,
+    run,
+  } as TaskStepDefinition
+}
+
 export const waitStep = (definition: WaitStepDefinition): WaitStepDefinition =>
   definition
+
+export const wait = (
+  definition: Omit<WaitStepDefinition, "kind">
+): WaitStepDefinition => ({
+  kind: "wait",
+  ...definition,
+})
 
 export const signalStep = (
   definition: SignalStepDefinition
 ): SignalStepDefinition => definition
 
+export const signal = (
+  definition: Omit<SignalStepDefinition, "kind">
+): SignalStepDefinition => ({
+  kind: "signal",
+  ...definition,
+})
+
 export const childStep = (
   definition: ChildStepDefinition
 ): ChildStepDefinition => definition
+
+export const child = (
+  definition: Omit<ChildStepDefinition, "kind">
+): ChildStepDefinition => ({
+  kind: "child",
+  ...definition,
+})
 
 export const sleepStep = (
   definition: SleepStepDefinition
 ): SleepStepDefinition => definition
 
+export const sleep = (
+  definition: Omit<SleepStepDefinition, "kind">
+): SleepStepDefinition => ({
+  kind: "sleep",
+  ...definition,
+})
+
 export const endStep = (
+  definition: Omit<EndStepDefinition, "kind"> = {}
+): EndStepDefinition => ({
+  kind: "end",
+  ...definition,
+})
+
+export const end = (
   definition: Omit<EndStepDefinition, "kind"> = {}
 ): EndStepDefinition => ({
   kind: "end",

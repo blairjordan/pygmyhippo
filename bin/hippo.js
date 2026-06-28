@@ -309,8 +309,12 @@ const printHelp = () => {
 
 const main = async () => {
   if (command !== "init") {
-    printHelp()
-    process.exitCode = 1
+    try {
+      await import("../dist/src/cli.js")
+    } catch (err) {
+      console.error("Failed to load CLI. Make sure you run 'npm run build' first.")
+      process.exitCode = 1
+    }
     return
   }
 

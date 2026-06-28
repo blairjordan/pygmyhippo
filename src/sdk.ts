@@ -1,11 +1,17 @@
 export {
+  child,
   childStep,
   defineWorkflow,
+  end,
   endStep,
   renderWorkflowAsMermaid,
+  signal,
   signalStep,
+  sleep,
   sleepStep,
+  task,
   taskStep,
+  wait,
   waitStep,
 } from "./lib/workflow-definition.js"
 

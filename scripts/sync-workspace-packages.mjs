@@ -27,6 +27,8 @@ const packages = [
       "src/lib/tracing",
       "src/lib/workflow-engine",
       "src/lib/workflow-store",
+      "src/lib/migration-runner",
+      "src/lib/migrations",
       "src/queries/workflow-store.queries",
       "src/types/json",
       "src/types/workflow",
@@ -75,6 +77,51 @@ const packages = [
       "src/routes/workflows",
       "src/types/json",
       "src/types/workflow",
+    ],
+  },
+  {
+    directory: "cli",
+    exportsTarget: "./dist/src/cli.js",
+    description: "Hippo operator command-line interface",
+    readmeHeading: "@hippo/cli",
+    dependencies: {
+      "commander": rootPackageJson.dependencies["commander"] || "^12.1.0",
+      "pg": rootPackageJson.dependencies["pg"],
+      "@fastify/sensible": rootPackageJson.dependencies["@fastify/sensible"],
+      "fastify": rootPackageJson.dependencies["fastify"],
+      "cron-parser": rootPackageJson.dependencies["cron-parser"],
+      "zod": rootPackageJson.dependencies["zod"],
+      "@opentelemetry/api": rootPackageJson.dependencies["@opentelemetry/api"],
+      "@pgtyped/runtime": rootPackageJson.dependencies["@pgtyped/runtime"],
+      "prom-client": rootPackageJson.dependencies["prom-client"],
+    },
+    artifacts: [
+      "src/cli",
+      "src/app",
+      "src/server",
+      "src/lib/auth",
+      "src/lib/config",
+      "src/lib/db",
+      "src/lib/metrics",
+      "src/lib/notifier",
+      "src/lib/outbox",
+      "src/lib/recovery",
+      "src/lib/scheduler",
+      "src/lib/tracing",
+      "src/lib/worker",
+      "src/lib/workflow-definition",
+      "src/lib/workflow-engine",
+      "src/lib/workflow-store",
+      "src/lib/workflow-loader",
+      "src/lib/migration-runner",
+      "src/lib/migrations",
+      "src/routes/dashboard",
+      "src/routes/health",
+      "src/routes/metrics",
+      "src/routes/workflows",
+      "src/types/json",
+      "src/types/workflow",
+      "src/queries/workflow-store.queries",
     ],
   },
 ]
@@ -148,13 +195,20 @@ for (const pkg of packages) {
     description: pkg.description,
     engines: rootPackageJson.engines,
     dependencies: pkg.dependencies,
-    files: ["dist", "README.md"],
+    files: ["dist", "README.md", ...(pkg.directory === "cli" ? ["bin"] : [])],
     exports: {
       ".": {
         types: pkg.exportsTarget.replace(".js", ".d.ts"),
         default: pkg.exportsTarget,
       },
     },
+    ...(pkg.directory === "cli"
+      ? {
+          bin: {
+            hippo: "./bin/hippo.js",
+          },
+        }
+      : {}),
   }
 
   await writeFile(
@@ -167,4 +221,14 @@ for (const pkg of packages) {
     createPackageReadme(pkg.readmeHeading, pkg.description),
     "utf8"
   )
+
+  if (pkg.directory === "cli") {
+    const binDir = path.join(packageRoot, "bin")
+    await mkdir(binDir, { recursive: true })
+    const binContent = `#!/usr/bin/env node\nimport "../dist/src/cli.js"\n`
+    await writeFile(path.join(binDir, "hippo.js"), binContent, {
+      encoding: "utf8",
+      mode: 0o755,
+    })
+  }
 }
