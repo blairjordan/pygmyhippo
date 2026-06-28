@@ -306,21 +306,36 @@ describe("app routes", () => {
   })
 
   it("renders the dashboard skeleton", async () => {
-    const response = await app.inject({
+    const redirectResponse = await app.inject({
       method: "GET",
       url: "/dashboard",
     })
+    expect(redirectResponse.statusCode).toBe(302)
+    expect(redirectResponse.headers.location).toBe("/dashboard/runs")
 
-    expect(response.statusCode).toBe(200)
-    expect(response.headers["content-type"]).toContain("text/html")
-    expect(response.body).toContain("Hippo dashboard")
-    expect(response.body).toContain("Workflow definitions")
-    expect(response.body).toContain('data-theme-toggle')
-    expect(response.body).toContain('class="mermaid"')
-    expect(response.body).toContain("data-node-actions")
-    expect(response.body).toContain('/v1/workflows/demo-delivery/render')
-    expect(response.body).toContain("hippo-dashboard-theme")
-    expect(response.body).toContain("cdn.jsdelivr.net/npm/mermaid")
+    const runsResponse = await app.inject({
+      method: "GET",
+      url: "/dashboard/runs",
+    })
+    expect(runsResponse.statusCode).toBe(200)
+    expect(runsResponse.headers["content-type"]).toContain("text/html")
+    expect(runsResponse.body).toContain("Hippo")
+    expect(runsResponse.body).toContain("Runs")
+    expect(runsResponse.body).toContain("Definitions")
+    expect(runsResponse.body).toContain('data-theme-toggle')
+    expect(runsResponse.body).toContain("hippo-dashboard-theme")
+
+    const definitionResponse = await app.inject({
+      method: "GET",
+      url: "/dashboard/definitions/demo-delivery",
+    })
+    expect(definitionResponse.statusCode).toBe(200)
+    expect(definitionResponse.headers["content-type"]).toContain("text/html")
+    expect(definitionResponse.body).toContain('class="mermaid"')
+    expect(definitionResponse.body).toContain("data-mount-id")
+    expect(definitionResponse.body).toContain('/v1/workflows/demo-delivery/render')
+    expect(definitionResponse.body).toContain("hippo-dashboard-theme")
+    expect(definitionResponse.body).toContain("cdn.jsdelivr.net/npm/mermaid")
   })
 
   it("renders a run detail dashboard page", async () => {
@@ -405,7 +420,7 @@ describe("app routes", () => {
     expect(response.body).toContain("Lineage")
     expect(response.body).toContain('data-theme-toggle')
     expect(response.body).toContain('class="mermaid"')
-    expect(response.body).toContain("data-node-actions")
+    expect(response.body).toContain("data-mount-id")
     expect(response.body).toContain('data-step-key="send-email"')
     expect(response.body).toContain("class step_5_delivery_confirmation currentStep")
     expect(response.body).toContain("/v1/runs/run-1/stream?afterEventId=1")
