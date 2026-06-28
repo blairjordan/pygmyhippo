@@ -2002,14 +2002,35 @@ export const createWorkflowStore = (
 
       const sourceRun = mapRun(sourceRunRow)
 
-      if (!terminalRunStatuses.has(sourceRun.status)) {
-        throw new Error(
-          `Run "${args.runId}" must be terminal before ${args.mode}`
-        )
-      }
-
       if (args.mode === "rewind" && sourceRun.supersededByRunId) {
         throw new Error(`Run "${args.runId}" has already been rewound`)
+      }
+
+      if (!terminalRunStatuses.has(sourceRun.status)) {
+        if (args.mode === "rewind") {
+          const cancelTree = async (runId: string) => {
+            await requestCancelRunQuery.run(
+              {
+                runId,
+                mode: "hard",
+                eventType: "run.canceled",
+                eventPayload: { reason: "Superseded by rewind" },
+              },
+              client
+            )
+
+            const childRows = await listChildRunsQuery.run({ parentRunId: runId }, client)
+            for (const childRow of childRows) {
+              await cancelTree(childRow.id)
+            }
+          }
+
+          await cancelTree(sourceRun.id)
+        } else {
+          throw new Error(
+            `Run "${args.runId}" must be terminal before ${args.mode}`
+          )
+        }
       }
 
       const [attemptRow] = await getStepAttemptByIdForRunQuery.run(

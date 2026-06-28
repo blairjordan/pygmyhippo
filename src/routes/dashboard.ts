@@ -1246,6 +1246,24 @@ export const renderRunDetailDocument = (args: {
       @media (max-width: 900px) {
         .grid { grid-template-columns: 1fr; }
         .mermaid { min-width: 360px; }
+      }
+      
+      .entry-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.25rem;
+      }
+      .entry-actions {
+        display: flex;
+        gap: 0.375rem;
+      }
+      .btn-xs {
+        height: 1.5rem;
+        padding: 0 0.5rem;
+        font-size: 0.75rem;
+        border-radius: 0.25rem;
+        line-height: 1.25rem;
       }`
 
   const content = `
@@ -1330,6 +1348,44 @@ export const renderRunDetailDocument = (args: {
         }
         source.onerror = () => { source.close() }
       })()
+
+      async function triggerBranch(runId, attemptId, mode) {
+        if (!confirm("Are you sure you want to " + mode + " from this attempt?")) {
+          return
+        }
+        const url = "/v1/operators/runs/" + runId + "/" + mode
+        const body = mode === "rewind" ? { toAttemptId: attemptId } : { fromAttemptId: attemptId }
+        
+        async function sendRequest(token) {
+          const headers = { "Content-Type": "application/json" }
+          if (token) {
+            headers["Authorization"] = "Bearer " + token
+          }
+          return fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
+        }
+
+        let token = localStorage.getItem("hippo_api_token")
+        let res = await sendRequest(token)
+
+        if (res.status === 401) {
+          const inputToken = prompt("Enter your Hippo API Token:")
+          if (inputToken !== null) {
+            localStorage.setItem("hippo_api_token", inputToken)
+            res = await sendRequest(inputToken)
+          } else {
+            return
+          }
+        }
+
+        if (res.ok) {
+          const data = await res.json()
+          alert("Successfully initiated " + mode + "! Redirecting to new run...")
+          window.location.href = "/dashboard/runs/" + data.runId
+        } else {
+          const errText = await res.text()
+          alert("Failed to " + mode + ": " + errText)
+        }
+      }
     </script>
   `
 
@@ -1345,11 +1401,32 @@ export const renderRunDetailDocument = (args: {
 export const renderAttemptCard = (
   attempt: Pick<
     WorkflowStepAttemptRecord,
-    "kind" | "attempt" | "completedAt" | "error" | "output" | "startedAt" | "status" | "stepKey"
+    | "id"
+    | "kind"
+    | "attempt"
+    | "completedAt"
+    | "error"
+    | "output"
+    | "startedAt"
+    | "status"
+    | "stepKey"
   >,
+  runId: string,
+  isSourceRunSuperseded: boolean,
   index = 0
-) => `<article class="entry" data-step-key="${escapeHtml(attempt.stepKey)}" data-step-attempt-index="${String(index)}">
-  <strong>${escapeHtml(attempt.stepKey)} · ${escapeHtml(attempt.kind === "compensate" ? "compensate" : "attempt")} ${String(attempt.attempt)}</strong>
+) => {
+  const showActions = (attempt.kind === "forward" || attempt.kind === undefined) && !isSourceRunSuperseded
+
+  return `<article class="entry" data-step-key="${escapeHtml(attempt.stepKey)}" data-step-attempt-index="${String(index)}">
+  <div class="entry-header">
+    <strong>${escapeHtml(attempt.stepKey)} · ${escapeHtml(attempt.kind === "compensate" ? "compensate" : "attempt")} ${String(attempt.attempt)}</strong>
+    ${showActions ? `
+      <div class="entry-actions">
+        <button class="btn btn-outline btn-xs" onclick="triggerBranch('${runId}', '${attempt.id}', 'rewind')">Rewind</button>
+        <button class="btn btn-outline btn-xs" onclick="triggerBranch('${runId}', '${attempt.id}', 'fork')">Fork</button>
+      </div>
+    ` : ""}
+  </div>
   <time>${escapeHtml(formatDateTime(attempt.startedAt))} → ${escapeHtml(formatDateTime(attempt.completedAt))}</time>
   <pre class="pre-json">${formatJson({
     kind: attempt.kind ?? "forward",
@@ -1358,6 +1435,7 @@ export const renderAttemptCard = (
     error: attempt.error,
   })}</pre>
 </article>`
+}
 
 export const renderEventCard = (
   event: Pick<WorkflowEventRecord, "createdAt" | "eventType" | "payload">

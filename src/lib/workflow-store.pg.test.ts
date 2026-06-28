@@ -493,6 +493,82 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
     )
   })
 
+  it("rewinds a non-terminal run and cancels it, its child runs, and waits recursively", async () => {
+    const childWorkflow = defineWorkflow({
+      name: "nonterm-child",
+      version: 1,
+      startAt: "first",
+      steps: {
+        first: taskStep({
+          kind: "task",
+          next: "done",
+          run: () => ({ patch: { ok: true } }),
+        }),
+        done: endStep(),
+      },
+    })
+    const parentWorkflow = defineWorkflow({
+      name: "nonterm-parent",
+      version: 1,
+      startAt: "spawn",
+      steps: {
+        spawn: childStep({
+          kind: "child",
+          workflow: childWorkflow.name,
+          next: "done",
+          input: () => ({}),
+          resume: () => ({}),
+        }),
+        done: endStep(),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [parentWorkflow, childWorkflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const parentRun = await engine.startRun({
+      workflowName: parentWorkflow.name,
+      payload: {},
+    })
+
+    await engine.tick("test-worker", 15000)
+
+    const sourceParent = await store.getRun(parentRun.id)
+    expect(sourceParent?.status).toBe("waiting")
+
+    const childRuns = await store.listChildRuns(parentRun.id)
+    expect(childRuns.length).toBe(1)
+    const childRun = childRuns[0]!
+    expect(childRun.status).toBe("queued")
+
+    const parentAttempts = await store.getRunAttempts(parentRun.id)
+    const spawnAttempt = parentAttempts.find((a) => a.stepKey === "spawn")
+    expect(spawnAttempt).toBeDefined()
+
+    const rewoundParent = await store.branchRun({
+      runId: parentRun.id,
+      attemptId: spawnAttempt!.id,
+      mode: "rewind",
+    })
+
+    expect(rewoundParent).not.toBeNull()
+
+    const updatedParent = await store.getRun(parentRun.id)
+    expect(updatedParent?.supersededByRunId).toBe(rewoundParent!.id)
+    expect(updatedParent?.status).toBe("canceled")
+
+    const updatedChild = await store.getRun(childRun.id)
+    expect(updatedChild?.status).toBe("canceled")
+
+    // Clean up to avoid contaminating subsequent integration tests
+    await store.cancelRun({
+      runId: rewoundParent.id,
+      reason: "Clean up",
+    })
+  })
+
   it("lists filtered runs and lineage through the real SQL store queries", async () => {
     const workflow = defineWorkflow({
       name: "lineage-query-example",

@@ -525,7 +525,7 @@ export const createWorkflowRoutes = (args: {
         const document = renderRunDetailDocument({
           attempts:
             attempts.length > 0
-              ? attempts.map((attempt, index) => renderAttemptCard(attempt, index)).join("")
+              ? attempts.map((attempt, index) => renderAttemptCard(attempt, run.id, !!run.supersededByRunId, index)).join("")
               : '<div class="entry">No attempts recorded yet.</div>',
           events:
             events.length > 0
@@ -912,11 +912,7 @@ export const createWorkflowRoutes = (args: {
         const body = rewindRunBodySchema.parse(request.body ?? {})
         const existingRun = await getExistingRun(app, args.store, params.runId)
 
-        if (!terminalRunStatuses.has(existingRun.status)) {
-          throw app.httpErrors.conflict(
-            `Run "${params.runId}" must be terminal before rewind`
-          )
-        }
+
 
         if (existingRun.supersededByRunId) {
           throw app.httpErrors.conflict(
