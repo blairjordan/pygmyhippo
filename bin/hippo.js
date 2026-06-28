@@ -311,7 +311,7 @@ const main = async () => {
   if (command !== "init") {
     try {
       await import("../dist/src/cli.js")
-    } catch (err) {
+    } catch {
       console.error("Failed to load CLI. Make sure you run 'npm run build' first.")
       process.exitCode = 1
     }

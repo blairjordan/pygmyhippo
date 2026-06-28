@@ -1,4 +1,4 @@
-import { z } from "zod"
+import type { z } from "zod"
 import type { JsonValue } from "../types/json.js"
 import type {
   ChildStepDefinition,
@@ -39,14 +39,14 @@ export function task<
   const originalRun = definition.run
 
   const run = async (context: StepExecutionContext): Promise<TaskStepResult> => {
-    let parsedInput: any = context.input
+    let parsedInput: unknown = context.input
     if (definition.input) {
       parsedInput = definition.input.parse(context.input)
     }
 
     const rawResult = await originalRun({
       ...context,
-      input: parsedInput,
+      input: parsedInput as z.infer<TInputSchema>,
     })
 
     const isStepResult =
@@ -71,6 +71,7 @@ export function task<
     return finalResult
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { input, output, ...rest } = definition
 
   return {

@@ -564,7 +564,7 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
 
     // Clean up to avoid contaminating subsequent integration tests
     await store.cancelRun({
-      runId: rewoundParent.id,
+      runId: rewoundParent!.id,
       reason: "Clean up",
     })
   })
