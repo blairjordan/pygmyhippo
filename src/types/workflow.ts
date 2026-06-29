@@ -67,6 +67,8 @@ export type WorkflowWaitRecord = {
   createdAt: Date
   updatedAt: Date
   resumedAt: Date | null
+  externalSessionId: string | null
+  externalSessionKind: string | null
 }
 
 export type WorkflowStepAttemptRecord = {
@@ -87,6 +89,8 @@ export type WorkflowStepAttemptRecord = {
   createdAt: Date
   updatedAt: Date
   traceContext?: string | null
+  externalSessionId?: string | null
+  externalSessionKind?: string | null
 }
 
 export type RetryPolicy = {
@@ -269,6 +273,29 @@ export type EndStepDefinition = {
   label?: string
 }
 
+export type ExternalSessionStartResult = {
+  externalId: string
+  payload?: JsonValue
+}
+
+export type ExternalSessionStepDefinition = {
+  kind: "externalSession"
+  label?: string
+  sessionKind: string
+  next?: string
+  transitions?: Record<string, string>
+  timeoutMs: number
+  retry?: RetryPolicy
+  start: (
+    context: StepExecutionContext
+  ) => Promise<ExternalSessionStartResult> | ExternalSessionStartResult
+  resume: (
+    context: StepExecutionContext,
+    externalId: string,
+    payload: JsonValue | undefined
+  ) => Promise<WaitStepResumeResult> | WaitStepResumeResult
+}
+
 export type WorkflowStepDefinition =
   | TaskStepDefinition
   | WaitStepDefinition
@@ -276,6 +303,7 @@ export type WorkflowStepDefinition =
   | ChildStepDefinition
   | SleepStepDefinition
   | EndStepDefinition
+  | ExternalSessionStepDefinition
 
 export type WorkflowDefinition = {
   name: string

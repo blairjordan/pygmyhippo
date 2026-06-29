@@ -151,6 +151,8 @@ type IWaitRow = {
   createdAt: Date
   updatedAt: Date
   resumedAt: Date | null
+  externalSessionId?: string | null
+  externalSessionKind?: string | null
 }
 
 type IEventRow = {
@@ -224,6 +226,8 @@ const mapWait = (row: IWaitRow): WorkflowWaitRecord => ({
   resumePayload: row.resumePayload,
   resumeOutput: row.resumeOutput,
   expiresAt: row.expiresAt ?? null,
+  externalSessionId: row.externalSessionId ?? null,
+  externalSessionKind: row.externalSessionKind ?? null,
 })
 
 const mapSignal = (row: {

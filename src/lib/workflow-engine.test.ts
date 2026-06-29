@@ -599,6 +599,8 @@ const createStoreStub = () => {
         createdAt: now(),
         updatedAt: now(),
         resumedAt: null,
+        externalSessionId: null,
+        externalSessionKind: null,
       })
       const next: WorkflowRunRecord = {
         ...run,
