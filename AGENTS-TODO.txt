@@ -28,17 +28,23 @@ Commits so far on this branch (oldest first):
            - npx tsc --noEmit clean
 
 Open work-in-flight on this branch (next commits):
-  - Engine dispatch branch for kind === "externalSession"
-  - store.openWait extension to persist external session columns
-  - store.getOpenWaitByExternalSessionId lookup for callback route
-  - POST /v1/external-sessions/:externalId/resume route
   - Postgres-backed integration test
-  - examples/workflows-demo: video transcode example
 
-Once the engine + route + test + example land, PR 1 (externalSession
-MVP) is mergeable to main. After merge this branch can either be
-rebased forward for PR 2 (heartbeat callback) or PR 2 can branch off
-a fresh main — see "PR cadence" below.
+Uncommitted working tree since 302d3f4:
+  - SDK exports externalSession(...) builder
+  - Engine dispatch branch for kind === "externalSession"
+  - store.openWait persists external session columns via focused update
+  - store.resumeExternalSession lookup/resume by external_session_id
+  - POST /v1/external-sessions/:externalId/resume route
+  - In-memory engine + app route tests for external session resume
+  - examples/workflows-demo: video-transcode example
+  - npm run typecheck clean
+  - npm run test -- src/lib/workflow-engine.test.ts src/app.test.ts clean
+
+Once the Postgres-backed integration test lands, PR 1
+(externalSession MVP) is mergeable to main. After merge this branch
+can either be rebased forward for PR 2 (heartbeat callback) or PR 2
+can branch off a fresh main — see "PR cadence" below.
 
 Why this work exists
 --------------------
@@ -77,16 +83,14 @@ Positioning rules
   agent builders find Hippo, but core stays generic so non-agent
   consumers are not forced to ignore agent vocabulary.
 
-Motivating consumer (out-of-tree)
----------------------------------
- at  wraps Nous Research's Hermes agent harness. 
-needs phase transitions, HITL gates via Slack, durable retries with
-critic feedback, operator rewind when an agent goes sideways, token +
-USD budgets, and live agent reasoning streamed into a dashboard. All
-of those map to generic primitives below.  proves the primitives
-on a real workload; other agent harnesses (Claude Code skills,
-OpenAI Assistants, Codex, internal harnesses at other teams) can
-build sibling contrib layers on the same engine.
+Motivating consumers (out-of-tree)
+----------------------------------
+Modern agent harnesses and long-running automation systems need phase
+transitions, HITL gates, durable retries with critic feedback, operator
+rewind when external work goes sideways, usage budgets, and live event
+streams into dashboards. All of those map to generic primitives below.
+Out-of-tree integrations prove the primitives on real workloads while
+core stays focused on the workflow engine contract.
 
 Design rules
 ------------
@@ -779,8 +783,6 @@ Shape:
       slack-approval.ts      — wraps wait.forSignal with Slack callbacks
       tool-allowlist.ts      — typed tool gating helpers
       usage-helpers.ts       — token-to-cost converters per provider
-    examples/
-      generic-feature-flow.ts — full  phase model demo
 
 The contrib package does NOT live in this repo. The Hippo core team
 maintains the primitives; the contrib layer is community-extensible.
@@ -794,37 +796,6 @@ What this implies for core API design:
     without core registry changes.
   - Operator actions are pluggable (Tier 2.9) so contrib UIs ship
     domain-specific buttons.
-
-----------------------------------------------------------------------
-
- integration mapping (out-of-tree, informational)
-=======================================================
-
-For reviewers wondering "how does 's  actually use
-this" — 's mapping of its phase model onto these primitives:
-
-   phase             →  Hippo primitive
-  ----------------------------------------------
-  requirements             →  externalSession + critic loop
-  architecture             →  externalSession + critic loop
-  task decomposition       →  externalSession + critic loop
-  implementation (per task)→  externalSession (one per task,
-                              child workflow per feature)
-  HITL clarification       →  wait.forSignal (Slack callback)
-  HITL PR approval         →  wait.forSignal (GitHub webhook)
-  cost cap per feature     →  workflow budget caps
-  rewind from sideways     →  existing rewind/fork API
-  multi-feature swarm      →  cron schedule + child workflows
-  live agent reasoning     →  ctx.emit + dashboard renderer
-  per-phase tool gating    →  application-level config passed to
-                              the Hermes session at start()
-  artifact state           →  git branch + frontmatter (NOT Hippo)
-  memory                   →  Mnemosyne (NOT Hippo)
-
-None of this lives in Hippo core. It is 's job to compose the
-primitives. The mapping is here so reviewers can sanity-check whether
-a proposed core change is bent toward  specifically vs serves
-the general agent-orchestration case.
 
 ----------------------------------------------------------------------
 

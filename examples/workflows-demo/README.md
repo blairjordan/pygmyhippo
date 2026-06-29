@@ -8,6 +8,7 @@ This example demonstrates production-ready durable workflows built using Hippo's
 2. **Webhook Callback Waits** (`webhook-callback`): Pauses run execution waiting for external REST callback ingestion.
 3. **Cron Scheduling** (`nightly-report`): Periodic time-triggered job dispatching.
 4. **Signal-based Approvals with Timeout** (`approval-flow`): Long-running approval flows that fail cleanly on timeout.
+5. **External Sessions** (`video-transcode`): Persists a third-party job id and resumes from an external callback.
 
 ---
 
@@ -139,3 +140,27 @@ The flow will log approval and finish.
 
 #### Option B: Wait for timeout (Failure/Expiration)
 Do not send any signal. After 30 seconds, the recovery thread will detect the expired wait state, mark the run as `failed`, and record the error `Wait step expired`.
+
+---
+
+### 5. External Video Transcode Session
+
+Start a simulated long-running transcode job:
+```bash
+curl -X POST \
+  -H "Authorization: Bearer demo-token" \
+  -H "Content-Type: application/json" \
+  -d '{"assetId":"asset-42", "sourceUrl":"https://example.com/input.mov", "profile":"web-1080p"}' \
+  http://127.0.0.1:3000/v1/workflows/video-transcode/runs
+```
+The workflow opens an external session with id `transcode:asset-42` and remains in `waiting` status.
+
+Resume it as if a transcoder service posted its completion callback:
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"payload":{"status":"complete", "outputUrl":"s3://demo-bucket/asset-42.mp4"}}' \
+  http://127.0.0.1:3000/v1/external-sessions/transcode:asset-42/resume
+```
+
+The workflow resumes at `done` and records the callback payload in run context.

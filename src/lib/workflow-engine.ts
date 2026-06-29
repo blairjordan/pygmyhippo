@@ -773,6 +773,52 @@ const continueRun = async (args: {
         return activeRun
       }
 
+      if (step.kind === "externalSession") {
+        const sessionResult = await args.tracer.withSpan(
+          {
+            name: "hippo.workflow.step.external_session.start",
+            attributes: createTraceAttributes({
+              operation: "workflow.step.external_session.start",
+              workflowName: activeRun.definitionName,
+              workflowVersion: activeRun.definitionVersion,
+              runId: activeRun.id,
+              stepKey,
+              stepKind: step.kind,
+              taskQueue: activeRun.taskQueue,
+              workerId: args.workerId,
+            }),
+          },
+          () =>
+            withTimeout(
+              Promise.resolve(step.start(executionContext)),
+              step.timeoutMs,
+              `External session step "${stepKey}" in workflow "${definition.name}"`
+            )
+        )
+
+        activeRun = await args.store.openWait({
+          runId: activeRun.id,
+          stepKey,
+          workerId: args.workerId,
+          attemptId: attempt.id,
+          context: activeRun.context,
+          correlationKey: `external:${sessionResult.externalId}`,
+          payload: sessionResult.payload ?? null,
+          expiresAt: getStepExpiresAt(step.timeoutMs, executionContext.now),
+          output: sessionResult.payload ?? null,
+          externalSessionId: sessionResult.externalId,
+          externalSessionKind: step.sessionKind,
+        })
+
+        args.metrics.stepAttempts.inc({
+          workflow: definition.name,
+          step: stepKey,
+          status: "completed",
+        })
+        args.metrics.waitOpens.set(await args.store.countOpenWaits())
+        return activeRun
+      }
+
       if (step.kind !== "task") {
         throw new Error("Encountered an unsupported executable step kind")
       }
@@ -920,7 +966,10 @@ const continueRun = async (args: {
         return null
       }
 
-      const retryPolicy = step.kind === "task" ? step.retry : undefined
+      const retryPolicy =
+        step.kind === "task" || step.kind === "externalSession"
+          ? step.retry
+          : undefined
       const errorTag = getErrorTag(error)
       const isNonRetryable =
         errorTag !== null &&
@@ -1357,6 +1406,89 @@ export const createWorkflowEngine = (args: {
       )
     }
 
+  const resumeExternalSession = async (input: {
+    externalSessionId: string
+    payload?: JsonValue
+  }) =>
+    tracer.withSpan(
+      {
+        name: "hippo.workflow.resume_external_session",
+        attributes: {
+          "hippo.operation": "workflow.resume_external_session",
+          "workflow.external_session.id": input.externalSessionId,
+        },
+      },
+      async () => {
+        const resumed = await args.store.resumeExternalSession({
+          externalSessionId: input.externalSessionId,
+          payload: input.payload,
+          resume: async (run, wait) => {
+            const definition = requireDefinition(
+              definitions,
+              run.definitionName,
+              run.definitionVersion
+            )
+            const step = getStep(definition, wait.stepKey)
+
+            if (step.kind !== "externalSession") {
+              throw new Error(
+                `Step "${wait.stepKey}" in workflow "${definition.name}" is not an external session`
+              )
+            }
+
+            if (!wait.externalSessionId) {
+              throw new Error(
+                `External session step "${wait.stepKey}" in workflow "${definition.name}" has no external id`
+              )
+            }
+
+            const result: WaitStepResumeResult = await step.resume(
+              createExecutionContext({
+                run,
+                attempt: 0,
+                stepKey: wait.stepKey,
+                heartbeat: async () => false,
+                db: {
+                  query: args.store.queryStepDatabase,
+                },
+                outbox: {
+                  enqueue: async (outboxInput) => {
+                    await args.store.enqueueOutbox({
+                      runId: run.id,
+                      topic: outboxInput.topic,
+                      payload: outboxInput.payload,
+                      ...(outboxInput.availableAt === undefined
+                        ? {}
+                        : { availableAt: outboxInput.availableAt }),
+                    })
+                  },
+                },
+                transactional: false,
+              }),
+              wait.externalSessionId,
+              input.payload
+            )
+            const nextStepKey = result.transition ?? step.next
+
+            if (!nextStepKey) {
+              throw new Error(
+                `External session step "${wait.stepKey}" in workflow "${definition.name}" did not resolve a next step`
+              )
+            }
+
+            return {
+              nextStepKey,
+              context: mergeContext(run.context, result.patch),
+              output: result.output ?? null,
+            }
+          },
+        })
+
+        args.metrics.waitOpens.set(await args.store.countOpenWaits())
+        return resumed
+      }
+    )
+
   return {
     getWorkflow: (workflowName: string, version?: number) =>
       requireDefinition(definitions, workflowName, version),
@@ -1368,6 +1500,7 @@ export const createWorkflowEngine = (args: {
       definitions = replaceDefinitionRegistry(definitions, nextDefinitions)
       return [...definitions.latestByName.values()]
     },
+    resumeExternalSession,
     resumeWait,
     runCompensation,
     startRun,

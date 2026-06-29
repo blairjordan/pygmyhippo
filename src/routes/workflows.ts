@@ -118,6 +118,10 @@ const correlationKeyParamsSchema = z.object({
   correlationKey: z.string().min(1),
 })
 
+const externalSessionParamsSchema = z.object({
+  externalId: z.string().min(1),
+})
+
 const signalParamsSchema = z.object({
   runId: z.uuid(),
   signalName: z.string().min(1),
@@ -1390,6 +1394,46 @@ export const createWorkflowRoutes = (args: {
         if (run.status === "missing") {
           throw app.httpErrors.notFound(
             `Open wait "${params.correlationKey}" not found`
+          )
+        }
+
+        reply.code(run.status === "duplicate" ? 200 : 202)
+        return {
+          outcome: run.status,
+          runId: run.run?.id ?? null,
+          status: run.run?.status ?? null,
+          currentStepKey: run.run?.currentStepKey ?? null,
+        }
+      }
+    )
+  })
+
+  app.post("/v1/external-sessions/:externalId/resume", async (request, reply) => {
+    return traceRequest(
+      args.tracer,
+      {
+        name: "hippo.http.resume_external_session",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.resume_external_session",
+          route: "/v1/external-sessions/:externalId/resume",
+        }),
+      },
+      async () => {
+        const rawBody = (request.body ?? {}) as JsonValue
+        requireCallbackAuth(app, request, rawBody, args.auth)
+
+        const params = externalSessionParamsSchema.parse(request.params)
+        const body = resumeBodySchema.parse(request.body ?? {})
+        const run = await args.engine.resumeExternalSession(
+          body.payload === undefined
+            ? { externalSessionId: params.externalId }
+            : { externalSessionId: params.externalId, payload: body.payload }
+        )
+
+        if (run.status === "missing") {
+          throw app.httpErrors.notFound(
+            `Open external session "${params.externalId}" not found`
           )
         }
 

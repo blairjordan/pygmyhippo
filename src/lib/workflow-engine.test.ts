@@ -4,6 +4,7 @@ import {
   childStep,
   defineWorkflow,
   endStep,
+  externalSession,
   signalStep,
   sleepStep,
   taskStep,
@@ -580,6 +581,8 @@ const createStoreStub = () => {
       output: JsonValue | null
       attemptId: string
       context: JsonObject
+      externalSessionId?: string | null
+      externalSessionKind?: string | null
     }) {
       const run = runs.get(args.runId)!
       const attempt = attempts.find((candidate) => candidate.id === args.attemptId)!
@@ -599,8 +602,8 @@ const createStoreStub = () => {
         createdAt: now(),
         updatedAt: now(),
         resumedAt: null,
-        externalSessionId: null,
-        externalSessionKind: null,
+        externalSessionId: args.externalSessionId ?? null,
+        externalSessionKind: args.externalSessionKind ?? null,
       })
       const next: WorkflowRunRecord = {
         ...run,
@@ -643,6 +646,50 @@ const createStoreStub = () => {
       const resumed = await args.resume(run, wait)
       wait.status = "resumed"
       wait.resumePayload = null
+      wait.resumeOutput = resumed.output
+      wait.resumedAt = now()
+      const next: WorkflowRunRecord = {
+        ...run,
+        status: "queued",
+        currentStepKey: resumed.nextStepKey,
+        context: resumed.context,
+        error: null,
+        availableAt: now(),
+      }
+      runs.set(run.id, next)
+      appendEvent({
+        runId: run.id,
+        stepKey: wait.stepKey,
+        eventType: "wait.resumed",
+        payload: { nextStepKey: resumed.nextStepKey },
+      })
+      return { status: "resumed" as const, run: next }
+    },
+    async resumeExternalSession(args: {
+      externalSessionId: string
+      payload: JsonValue | undefined
+      resume: (
+        run: WorkflowRunRecord,
+        wait: WorkflowWaitRecord
+      ) => Promise<{
+        nextStepKey: string
+        context: JsonObject
+        output: JsonValue | null
+      }>
+    }) {
+      const wait = [...waits.values()].find(
+        (candidate) => candidate.externalSessionId === args.externalSessionId
+      )
+      if (!wait) {
+        return { status: "missing" as const, run: null }
+      }
+      const run = runs.get(wait.runId)!
+      if (wait.status !== "open") {
+        return { status: "duplicate" as const, run }
+      }
+      const resumed = await args.resume(run, wait)
+      wait.status = "resumed"
+      wait.resumePayload = args.payload ?? null
       wait.resumeOutput = resumed.output
       wait.resumedAt = now()
       const next: WorkflowRunRecord = {
@@ -1026,6 +1073,65 @@ describe("workflow engine", () => {
 
     expect(first.status).toBe("resumed")
     expect(first.run?.currentStepKey).toBe("done")
+    expect(second.status).toBe("duplicate")
+    expect(second.run?.id).toBe(first.run?.id)
+  })
+
+  it("opens and resumes an external session step by external id", async () => {
+    const workflow = defineWorkflow({
+      name: "external-workflow",
+      version: 1,
+      startAt: "transcode",
+      steps: {
+        transcode: externalSession({
+          sessionKind: "video-transcode",
+          next: "done",
+          timeoutMs: 60_000,
+          start: () => ({
+            externalId: "transcode-123",
+            payload: { status: "started" },
+          }),
+          resume: (_context, externalId, payload) => ({
+            patch: { externalId, callback: payload ?? null },
+            output: { status: "complete" },
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: "external-workflow",
+      payload: {},
+    })
+    const waiting = await engine.tick("test-worker", 5_000)
+
+    expect(waiting?.status).toBe("waiting")
+
+    const [attempt] = await store.getRunAttempts(run.id)
+    expect(attempt?.output).toEqual({ status: "started" })
+
+    const first = await engine.resumeExternalSession({
+      externalSessionId: "transcode-123",
+      payload: { resultUrl: "s3://bucket/out.mp4" },
+    })
+    const second = await engine.resumeExternalSession({
+      externalSessionId: "transcode-123",
+      payload: { resultUrl: "s3://bucket/out.mp4" },
+    })
+
+    expect(first.status).toBe("resumed")
+    expect(first.run?.currentStepKey).toBe("done")
+    expect(first.run?.context).toMatchObject({
+      externalId: "transcode-123",
+      callback: { resultUrl: "s3://bucket/out.mp4" },
+    })
     expect(second.status).toBe("duplicate")
     expect(second.run?.id).toBe(first.run?.id)
   })

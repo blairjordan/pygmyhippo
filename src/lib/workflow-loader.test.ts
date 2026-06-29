@@ -83,6 +83,9 @@ describe("workflow loader", () => {
         async resumeWait() {
           throw new Error("not used")
         },
+        async resumeExternalSession() {
+          throw new Error("not used")
+        },
         async runCompensation() {
           return null
         },

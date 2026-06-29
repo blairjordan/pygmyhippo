@@ -838,6 +838,8 @@ export const createWorkflowStore = (
     payload: JsonValue | null
     expiresAt: Date | null
     output: JsonValue | null
+    externalSessionId?: string | null
+    externalSessionKind?: string | null
   }) =>
     withStoreSpan(
       {
@@ -850,20 +852,45 @@ export const createWorkflowStore = (
         }),
       },
       async () => {
-        const [row] = await openWaitQuery.run(
-          {
-            ...args,
-            eventType: "wait.opened",
-            eventPayload: { correlationKey: args.correlationKey },
-          },
-          db
-        )
+        const run = await withTransaction(db, async (client) => {
+          const [row] = await openWaitQuery.run(
+            {
+              ...args,
+              eventType: "wait.opened",
+              eventPayload: { correlationKey: args.correlationKey },
+            },
+            client
+          )
 
-        if (!row) {
-          throw new LostLeaseError("Failed to open wait under active lease")
-        }
+          if (!row) {
+            throw new LostLeaseError("Failed to open wait under active lease")
+          }
 
-        const run = mapRun(row)
+          if (
+            args.externalSessionId !== undefined ||
+            args.externalSessionKind !== undefined
+          ) {
+            await client.query(
+              `
+                UPDATE workflow_waits
+                SET
+                  external_session_id = $1,
+                  external_session_kind = $2,
+                  updated_at = now()
+                WHERE run_id = $3
+                  AND correlation_key = $4
+              `,
+              [
+                args.externalSessionId ?? null,
+                args.externalSessionKind ?? null,
+                args.runId,
+                args.correlationKey,
+              ]
+            )
+          }
+
+          return mapRun(row)
+        })
         await notifyRunEvent(run.id)
         return run
       }
@@ -1069,6 +1096,105 @@ export const createWorkflowStore = (
       const resumedRun = mapRun(updatedRow)
       await notifyRunnable()
       await notifyRunEvent(resumedRun.id)
+          return { status: "resumed" as const, run: resumedRun }
+        })
+    )
+
+  const resumeExternalSession = async (args: {
+    externalSessionId: string
+    payload: JsonValue | undefined
+    resume: (
+      run: WorkflowRunRecord,
+      wait: WorkflowWaitRecord
+    ) => Promise<{
+      nextStepKey: string
+      context: JsonObject
+      output: JsonValue | null
+    }>
+  }) =>
+    withStoreSpan(
+      {
+        name: "resume_external_session",
+        attributes: {
+          "hippo.operation": "store.resume_external_session",
+          "workflow.external_session.id": args.externalSessionId,
+        },
+      },
+      () =>
+        withTransaction(db, async (client) => {
+          const waitResult = await client.query<IWaitRow>(
+            `
+              SELECT
+                id,
+                run_id AS "runId",
+                step_key AS "stepKey",
+                correlation_key AS "correlationKey",
+                status,
+                payload,
+                resume_payload AS "resumePayload",
+                resume_output AS "resumeOutput",
+                expires_at AS "expiresAt",
+                created_at AS "createdAt",
+                updated_at AS "updatedAt",
+                resumed_at AS "resumedAt",
+                external_session_id AS "externalSessionId",
+                external_session_kind AS "externalSessionKind"
+              FROM workflow_waits
+              WHERE external_session_id = $1
+              ORDER BY created_at DESC
+              LIMIT 1
+              FOR UPDATE
+            `,
+            [args.externalSessionId]
+          )
+          const waitRow = waitResult.rows[0]
+
+          if (!waitRow) {
+            return { status: "missing" as const, run: null }
+          }
+
+          const wait = mapWait(waitRow)
+          const [runRow] = await getRunByIdForUpdateQuery.run(
+            { runId: wait.runId },
+            client
+          )
+          const run = mapRun(requireRow(runRow, "Failed to load waiting run"))
+
+          if (wait.status !== "open") {
+            return { status: "duplicate" as const, run }
+          }
+
+          if (run.status !== "waiting" || run.currentStepKey !== wait.stepKey) {
+            return { status: "duplicate" as const, run }
+          }
+
+          const resumed = await args.resume(run, wait)
+
+          const [updatedRow] = await completeWaitResumeQuery.run(
+            {
+              waitId: wait.id,
+              runId: run.id,
+              stepKey: wait.stepKey,
+              nextStepKey: resumed.nextStepKey,
+              context: resumed.context,
+              resumePayload: args.payload ?? null,
+              output: resumed.output,
+              eventType: "wait.resumed",
+              eventPayload: {
+                nextStepKey: resumed.nextStepKey,
+                resumePayload: args.payload ?? null,
+              },
+            },
+            client
+          )
+
+          if (!updatedRow) {
+            return { status: "duplicate" as const, run }
+          }
+
+          const resumedRun = mapRun(updatedRow)
+          await notifyRunnable()
+          await notifyRunEvent(resumedRun.id)
           return { status: "resumed" as const, run: resumedRun }
         })
     )
@@ -2217,6 +2343,7 @@ export const createWorkflowStore = (
     queryStepDatabase,
     recoverExpiredLeases,
     requestCancelRun,
+    resumeExternalSession,
     resumeWait,
     consumeSignalAndResumeWait,
     retryRun,

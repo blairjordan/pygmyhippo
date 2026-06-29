@@ -24,6 +24,7 @@ import { orderFulfillmentWorkflow } from "./workflows/order-fulfillment.js"
 import { webhookCallbackWorkflow } from "./workflows/webhook-callback.js"
 import { nightlyReportWorkflow } from "./workflows/nightly-report.js"
 import { approvalFlowWorkflow } from "./workflows/approval-flow.js"
+import { videoTranscodeWorkflow } from "./workflows/video-transcode.js"
 
 const parseTaskQueues = (value: string) =>
   value
@@ -38,6 +39,7 @@ const main = async () => {
     webhookCallbackWorkflow,
     nightlyReportWorkflow,
     approvalFlowWorkflow,
+    videoTranscodeWorkflow,
   ]
 
   const sql = createDatabase(config)

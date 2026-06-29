@@ -34,6 +34,9 @@ describe("worker loop", () => {
       async resumeWait() {
         throw new Error("not used")
       },
+      async resumeExternalSession() {
+        throw new Error("not used")
+      },
       async startRun() {
         throw new Error("not used")
       },
@@ -80,6 +83,9 @@ describe("worker loop", () => {
         return null
       },
       async resumeWait() {
+        throw new Error("not used")
+      },
+      async resumeExternalSession() {
         throw new Error("not used")
       },
       async startRun() {

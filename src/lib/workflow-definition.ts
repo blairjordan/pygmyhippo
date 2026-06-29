@@ -3,6 +3,7 @@ import type { JsonValue } from "../types/json.js"
 import type {
   ChildStepDefinition,
   EndStepDefinition,
+  ExternalSessionStepDefinition,
   SleepStepDefinition,
   SignalStepDefinition,
   TaskStepDefinition,
@@ -88,6 +89,13 @@ export const wait = (
   definition: Omit<WaitStepDefinition, "kind">
 ): WaitStepDefinition => ({
   kind: "wait",
+  ...definition,
+})
+
+export const externalSession = (
+  definition: Omit<ExternalSessionStepDefinition, "kind">
+): ExternalSessionStepDefinition => ({
+  kind: "externalSession",
   ...definition,
 })
 

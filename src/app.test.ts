@@ -191,6 +191,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async resumeWait() {
     return { status: "missing" as const, run: null }
   },
+  async resumeExternalSession() {
+    return { status: "missing" as const, run: null }
+  },
   async consumeSignalAndResumeWait() {
     return { status: "missing" as const, run: null }
   },
@@ -468,6 +471,47 @@ describe("app routes", () => {
     })
 
     await duplicateApp.close()
+  })
+
+  it("resumes an external session callback by external id", async () => {
+    const externalStore = {
+      ...createStoreStub(),
+      async resumeExternalSession() {
+        return {
+          status: "resumed" as const,
+          run: createRunRecord({
+            status: "queued",
+            currentStepKey: "done",
+          }),
+        }
+      },
+    }
+    const externalApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store: externalStore,
+      }),
+      metrics: createMetrics(),
+      store: externalStore,
+    })
+
+    const response = await externalApp.inject({
+      method: "POST",
+      url: "/v1/external-sessions/job-123/resume",
+      payload: { payload: { ok: true } },
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({
+      outcome: "resumed",
+      runId: "run-1",
+      status: "queued",
+      currentStepKey: "done",
+    })
+
+    await externalApp.close()
   })
 
   it("requires an API token when configured", async () => {
@@ -812,6 +856,9 @@ describe("app routes", () => {
         return []
       },
       async resumeWait() {
+        throw new Error("not used")
+      },
+      async resumeExternalSession() {
         throw new Error("not used")
       },
       runCompensation,

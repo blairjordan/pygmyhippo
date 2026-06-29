@@ -65,6 +65,9 @@ describe("scheduler", () => {
       async resumeWait() {
         throw new Error("not used")
       },
+      async resumeExternalSession() {
+        throw new Error("not used")
+      },
       startRun,
       async tick() {
         return null
