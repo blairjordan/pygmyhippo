@@ -14,6 +14,7 @@ import {
   childStep,
   defineWorkflow,
   endStep,
+  externalSession,
   taskStep,
 } from "./workflow-definition.js"
 import { createMetrics } from "./metrics.js"
@@ -425,6 +426,106 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
     ).toHaveLength(1)
 
     await drainEngine(engine)
+  })
+
+  it("persists and resumes external session waits by external id", async () => {
+    const workflow = defineWorkflow({
+      name: "pg-external-session",
+      version: 1,
+      startAt: "submit",
+      steps: {
+        submit: externalSession({
+          sessionKind: "video-transcode",
+          next: "done",
+          timeoutMs: 300_000,
+          start: () => ({
+            externalId: "pg-transcode-123",
+            payload: {
+              status: "submitted",
+            },
+          }),
+          resume: (_context, externalId, payload) => ({
+            patch: {
+              externalId,
+              callbackPayload: payload ?? null,
+            },
+            output: {
+              status: "complete",
+            },
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+    const waitingRun = await engine.tick("pg-test-worker", 15_000)
+
+    expect(waitingRun?.status).toBe("waiting")
+
+    const waitRows = await pool.query<{
+      external_session_id: string | null
+      external_session_kind: string | null
+      payload: { status: string } | null
+    }>(
+      `
+        SELECT external_session_id, external_session_kind, payload
+        FROM workflow_waits
+        WHERE run_id = $1
+      `,
+      [run.id]
+    )
+
+    expect(waitRows.rows).toHaveLength(1)
+    expect(waitRows.rows[0]?.external_session_id).toBe("pg-transcode-123")
+    expect(waitRows.rows[0]?.external_session_kind).toBe("video-transcode")
+    expect(waitRows.rows[0]?.payload).toEqual({ status: "submitted" })
+
+    const resumed = await engine.resumeExternalSession({
+      externalSessionId: "pg-transcode-123",
+      payload: {
+        outputUrl: "s3://demo/out.mp4",
+      },
+    })
+    await drainEngine(engine)
+
+    const completedRun = await store.getRun(run.id)
+    const resumedWaitRows = await pool.query<{
+      status: string
+      resume_payload: { outputUrl: string } | null
+      resume_output: { status: string } | null
+    }>(
+      `
+        SELECT status, resume_payload, resume_output
+        FROM workflow_waits
+        WHERE run_id = $1
+      `,
+      [run.id]
+    )
+
+    expect(resumed.status).toBe("resumed")
+    expect(completedRun?.status).toBe("completed")
+    expect(completedRun?.context).toMatchObject({
+      externalId: "pg-transcode-123",
+      callbackPayload: {
+        outputUrl: "s3://demo/out.mp4",
+      },
+    })
+    expect(resumedWaitRows.rows[0]?.status).toBe("resumed")
+    expect(resumedWaitRows.rows[0]?.resume_payload).toEqual({
+      outputUrl: "s3://demo/out.mp4",
+    })
+    expect(resumedWaitRows.rows[0]?.resume_output).toEqual({
+      status: "complete",
+    })
   })
 
   it("rewinds and forks from a stored attempt snapshot", async () => {

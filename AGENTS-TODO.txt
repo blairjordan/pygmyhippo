@@ -12,10 +12,10 @@ up cold without re-reading the conversation.
 Current branch state
 --------------------
 Commits so far on this branch (oldest first):
-  3503a35  docs: agent-primitives roadmap + README agent angle
+  42e6dd2  docs: agent-primitives roadmap + README agent angle
            - AGENTS-TODO.txt created
            - README.md gains "For AI Agents" section and tagline
-  302d3f4  feat(external-session): migration + type scaffolding
+  7fa2abe  feat(external-session): migration + type scaffolding
            - db/migrations/20260629100000_external_sessions.sql adds
              external_session_id + external_session_kind to
              workflow_step_attempts and workflow_waits with partial
@@ -26,25 +26,35 @@ Commits so far on this branch (oldest first):
            - src/lib/workflow-engine.test.ts: fixture updated for new
              required wait fields
            - npx tsc --noEmit clean
+  986ff82  docs(agents-todo): expand to full branch context
+           - full Tier 1 / Tier 2 / Tier 3 roadmap captured
+           - PR cadence, testing strategy, glossary, and contrib
+             package shape documented
+  802f01e  feat(external-session): wire callback resume flow
+           - SDK exports externalSession(...) builder
+           - Engine dispatch branch for kind === "externalSession"
+           - store.openWait persists external session columns
+           - store.resumeExternalSession lookup/resume by external_session_id
+           - POST /v1/external-sessions/:externalId/resume route
+           - In-memory engine + app route tests for external session resume
+           - examples/workflows-demo: video-transcode example
+           - branch history scrubbed for named out-of-tree references
 
 Open work-in-flight on this branch (next commits):
-  - Postgres-backed integration test
+  - External heartbeat protocol (Tier 1.2)
 
-Uncommitted working tree since 302d3f4:
-  - SDK exports externalSession(...) builder
-  - Engine dispatch branch for kind === "externalSession"
-  - store.openWait persists external session columns via focused update
-  - store.resumeExternalSession lookup/resume by external_session_id
-  - POST /v1/external-sessions/:externalId/resume route
-  - In-memory engine + app route tests for external session resume
-  - examples/workflows-demo: video-transcode example
+Uncommitted working tree since 802f01e:
+  - Postgres-backed integration test for external session wait
+    persistence and resume
   - npm run typecheck clean
-  - npm run test -- src/lib/workflow-engine.test.ts src/app.test.ts clean
+  - npm run test clean
+  - HIPPO_PG_TEST_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres
+    npm run test:pg clean
 
-Once the Postgres-backed integration test lands, PR 1
-(externalSession MVP) is mergeable to main. After merge this branch
-can either be rebased forward for PR 2 (heartbeat callback) or PR 2
-can branch off a fresh main — see "PR cadence" below.
+PR 1 (externalSession MVP) is mergeable to main once the current
+Postgres-backed integration test commit lands. After merge this
+branch can either be rebased forward for PR 2 (heartbeat callback) or
+PR 2 can branch off a fresh main — see "PR cadence" below.
 
 Why this work exists
 --------------------
@@ -110,7 +120,7 @@ Design rules
 Tier 1 — Required for credible "long-running external session" story
 ====================================================================
 
-[ ] 1. externalSession step kind
+[x] 1. externalSession step kind
     Generic problem: an external system holds state for the step
     (agent session, ML training job, browser automation context,
     Stripe payment intent). Step must persist the external id so
