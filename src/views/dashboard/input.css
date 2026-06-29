@@ -470,4 +470,20 @@
     .sidebar-foot { margin-top: 0; padding: 0; }
     .content { padding: 1rem; }
   }
+
+  .mermaidTooltip {
+    position: absolute;
+    text-align: center;
+    z-index: 100;
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: calc(var(--radius) - 2px) !important;
+    padding: 6px 10px !important;
+    font-family: inherit !important;
+    font-size: 0.75rem !important;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+    opacity: 1 !important;
+  }
 }
+

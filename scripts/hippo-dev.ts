@@ -68,11 +68,9 @@ const runServeStep = (args: { command: string; args: string[] }) =>
 const main = async () => {
   const plan = createHippoDevPlan({ platform: process.platform })
   const fileEnv = await readEnvFile(".env")
+  Object.assign(process.env, fileEnv)
   const databaseAddress = resolveDatabaseAddress({
-    env: {
-      ...fileEnv,
-      ...process.env,
-    },
+    env: process.env,
   })
 
   for (const step of plan) {
