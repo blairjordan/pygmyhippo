@@ -1,6 +1,6 @@
 export { createDatabase, withTransaction } from "./lib/db.js"
 export { createMetrics } from "./lib/metrics.js"
-export { createHippoTracer } from "./lib/tracing.js"
+export { createHippoTracer, getActiveTraceContext, withTraceContext } from "./lib/tracing.js"
 export { createWorkflowNotifier } from "./lib/notifier.js"
 export { createWorkflowEngine } from "./lib/workflow-engine.js"
 export { createWorkflowStore, LostLeaseError } from "./lib/workflow-store.js"

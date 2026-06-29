@@ -4,6 +4,7 @@ import {
   SpanStatusCode,
   context,
   trace,
+  propagation,
   type Attributes,
   type Context,
   type Tracer,
@@ -46,6 +47,8 @@ const toAttributes = (attributes: TraceAttributes | undefined): Attributes | und
   )
 }
 
+const traceparentStorage = new AsyncLocalStorage<string>()
+
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Unknown error"
 
@@ -57,14 +60,25 @@ export const createHippoTracer = (args?: {
   const otelTracer = args?.tracer ?? trace.getTracer(scopeName)
   const contextStorage = new AsyncLocalStorage<Context>()
 
+const getTraceparentFromSpanContext = (spanCtx: { traceId: string; spanId: string; traceFlags: number }) => {
+  const flags = spanCtx.traceFlags.toString(16).padStart(2, "0")
+  return `00-${spanCtx.traceId}-${spanCtx.spanId}-${flags}`
+}
+
   const withSpan: HippoTracer["withSpan"] = async (input, run) => {
-    const parentContext = contextStorage.getStore() ?? context.active()
+    let parentContext = contextStorage.getStore() ?? context.active()
+    const activeTraceparent = getActiveTraceContext()
+    if (activeTraceparent) {
+      const carrier = { traceparent: activeTraceparent }
+      parentContext = propagation.extract(parentContext, carrier)
+    }
     const span = otelTracer.startSpan(
       input.name,
       createSpanOptions(input.attributes),
       parentContext
     )
     const spanContext = trace.setSpan(parentContext, span)
+    const traceparent = getTraceparentFromSpanContext(span.spanContext())
     const activeSpan: HippoSpan = {
       addEvent: (name, attributes) => {
         span.addEvent(name, toAttributes(attributes))
@@ -74,27 +88,57 @@ export const createHippoTracer = (args?: {
       },
     }
 
-    return contextStorage.run(spanContext, async () => {
-      try {
-        const result = await run(activeSpan)
-        span.setStatus({ code: SpanStatusCode.OK })
-        return result
-      } catch (error) {
-        span.recordException(error instanceof Error ? error : new Error(getErrorMessage(error)))
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: getErrorMessage(error),
+    return contextStorage.run(spanContext, () =>
+      context.with(spanContext, () =>
+        traceparentStorage.run(traceparent, async () => {
+          try {
+            const result = await run(activeSpan)
+            span.setStatus({ code: SpanStatusCode.OK })
+            return result
+          } catch (error) {
+            span.recordException(error instanceof Error ? error : new Error(getErrorMessage(error)))
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: getErrorMessage(error),
+            })
+            throw error
+          } finally {
+            span.end()
+          }
         })
-        throw error
-      } finally {
-        span.end()
-      }
-    })
+      )
+    )
   }
 
   return {
     withSpan,
   }
+}
+
+export const getActiveTraceContext = (): string | undefined => {
+  const stored = traceparentStorage.getStore()
+  if (stored) {
+    return stored
+  }
+
+  const carrier: Record<string, string> = {}
+  propagation.inject(context.active(), carrier)
+  return carrier["traceparent"]
+}
+
+export const withTraceContext = <T>(
+  traceparent: string | undefined | null,
+  run: () => Promise<T> | T
+): Promise<T> => {
+  if (!traceparent) {
+    return Promise.resolve(run())
+  }
+
+  const carrier = { traceparent }
+  const parentContext = propagation.extract(context.active(), carrier)
+  return traceparentStorage.run(traceparent, () =>
+    Promise.resolve(context.with(parentContext, run))
+  )
 }
 
 export const createTraceAttributes = (args: {
@@ -106,6 +150,10 @@ export const createTraceAttributes = (args: {
   stepKind?: string
   taskQueue?: string
   workerId?: string
+  attemptId?: string
+  attemptNumber?: number
+  attemptKind?: string
+  errorMessage?: string | null
 }) => ({
   "hippo.operation": args.operation,
   ...(args.workflowName === undefined ? {} : { "workflow.name": args.workflowName }),
@@ -119,4 +167,10 @@ export const createTraceAttributes = (args: {
   ...(args.stepKind === undefined ? {} : { "workflow.step.kind": args.stepKind }),
   ...(args.taskQueue === undefined ? {} : { "workflow.task_queue": args.taskQueue }),
   ...(args.workerId === undefined ? {} : { "workflow.worker.id": args.workerId }),
+  ...(args.attemptId === undefined ? {} : { "workflow.attempt.id": args.attemptId }),
+  ...(args.attemptNumber === undefined ? {} : { "workflow.attempt.number": args.attemptNumber }),
+  ...(args.attemptKind === undefined ? {} : { "workflow.attempt.kind": args.attemptKind }),
+  ...(args.errorMessage === undefined || args.errorMessage === null
+    ? {}
+    : { "workflow.error.message": args.errorMessage }),
 })

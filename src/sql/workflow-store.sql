@@ -10,7 +10,8 @@ INSERT INTO workflow_runs (
   current_step_key,
   idempotency_key,
   input,
-  context
+  context,
+  trace_context
 ) VALUES (
   :parentRunId,
   :parentStepKey,
@@ -22,7 +23,8 @@ INSERT INTO workflow_runs (
   :currentStepKey,
   :idempotencyKey,
   :input,
-  '{}'::jsonb
+  '{}'::jsonb,
+  :traceContext
 )
 ON CONFLICT (definition_name, idempotency_key)
 DO UPDATE SET
@@ -51,7 +53,8 @@ RETURNING
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt";
+  completed_at AS "completedAt",
+  trace_context AS "traceContext";
 
 /* @name GetRunById */
 SELECT
@@ -80,7 +83,8 @@ SELECT
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt"
+  completed_at AS "completedAt",
+  trace_context AS "traceContext"
 FROM workflow_runs
 WHERE id = :runId;
 
@@ -113,7 +117,8 @@ SELECT
   last_heartbeat_at AS "lastHeartbeatAt",
   completed_at AS "completedAt",
   created_at AS "createdAt",
-  updated_at AS "updatedAt"
+  updated_at AS "updatedAt",
+  trace_context AS "traceContext"
 FROM workflow_step_attempts
 WHERE run_id = :runId
 ORDER BY step_seq ASC, attempt ASC, created_at ASC;
@@ -183,7 +188,8 @@ RETURNING
   runs.available_at AS "availableAt",
   runs.created_at AS "createdAt",
   runs.updated_at AS "updatedAt",
-  runs.completed_at AS "completedAt";
+  runs.completed_at AS "completedAt",
+  runs.trace_context AS "traceContext";
 
 /* @name GetLastStepAttempt */
 SELECT COALESCE(MAX(attempt), 0)::int AS "lastAttempt"
@@ -206,7 +212,8 @@ INSERT INTO workflow_step_attempts (
   attempt,
   status,
   context_before,
-  input
+  input,
+  trace_context
 ) VALUES (
   :runId,
   :stepKey,
@@ -215,7 +222,8 @@ INSERT INTO workflow_step_attempts (
   :attempt,
   'started',
   :contextBefore,
-  :input
+  :input,
+  :traceContext
 )
 RETURNING
   id,
@@ -233,7 +241,8 @@ RETURNING
   last_heartbeat_at AS "lastHeartbeatAt",
   completed_at AS "completedAt",
   created_at AS "createdAt",
-  updated_at AS "updatedAt";
+  updated_at AS "updatedAt",
+  trace_context AS "traceContext";
 
 /* @name GetStepAttemptByIdForRun */
 SELECT
@@ -252,7 +261,8 @@ SELECT
   last_heartbeat_at AS "lastHeartbeatAt",
   completed_at AS "completedAt",
   created_at AS "createdAt",
-  updated_at AS "updatedAt"
+  updated_at AS "updatedAt",
+  trace_context AS "traceContext"
 FROM workflow_step_attempts
 WHERE run_id = :runId
   AND id = :attemptId;
@@ -269,7 +279,8 @@ INSERT INTO workflow_runs (
   status,
   current_step_key,
   input,
-  context
+  context,
+  trace_context
 ) VALUES (
   :branchedFromRunId,
   :branchedFromAttemptRunId,
@@ -281,7 +292,8 @@ INSERT INTO workflow_runs (
   'queued',
   :currentStepKey,
   :input,
-  :context
+  :context,
+  :traceContext
 )
 RETURNING
   id,
@@ -309,7 +321,8 @@ RETURNING
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt";
+  completed_at AS "completedAt",
+  trace_context AS "traceContext";
 
 /* @name MarkRunSuperseded */
 UPDATE workflow_runs
@@ -833,7 +846,8 @@ SELECT
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt"
+  completed_at AS "completedAt",
+  trace_context AS "traceContext"
 FROM workflow_runs
 WHERE id = :runId
 FOR UPDATE;
@@ -1380,6 +1394,7 @@ WITH existing_run AS (
     created_at AS "createdAt",
     updated_at AS "updatedAt",
     completed_at AS "completedAt",
+    trace_context AS "traceContext",
     FALSE AS inserted
   FROM workflow_runs
   WHERE definition_name = :definitionName
@@ -1396,7 +1411,8 @@ WITH existing_run AS (
     current_step_key,
     idempotency_key,
     input,
-    context
+    context,
+    trace_context
   )
   SELECT
     :parentRunId,
@@ -1409,7 +1425,8 @@ WITH existing_run AS (
     :currentStepKey,
     :idempotencyKey,
     :input,
-    '{}'::jsonb
+    '{}'::jsonb,
+    :traceContext
   WHERE NOT EXISTS (SELECT 1 FROM existing_run)
   ON CONFLICT (definition_name, idempotency_key) DO NOTHING
   RETURNING
@@ -1439,6 +1456,7 @@ WITH existing_run AS (
     created_at AS "createdAt",
     updated_at AS "updatedAt",
     completed_at AS "completedAt",
+    trace_context AS "traceContext",
     TRUE AS inserted
 )
 SELECT * FROM inserted_run
@@ -1534,7 +1552,8 @@ INSERT INTO workflow_runs (
   status,
   current_step_key,
   input,
-  context
+  context,
+  trace_context
 ) VALUES (
   :continuedFromRunId,
   :definitionName,
@@ -1544,7 +1563,8 @@ INSERT INTO workflow_runs (
   'queued',
   :currentStepKey,
   :input,
-  '{}'::jsonb
+  '{}'::jsonb,
+  :traceContext
 )
 RETURNING
   id,
@@ -1572,7 +1592,8 @@ RETURNING
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt";
+  completed_at AS "completedAt",
+  trace_context AS "traceContext";
 
 /* @name ContinueAsNewSetResult */
 UPDATE workflow_runs

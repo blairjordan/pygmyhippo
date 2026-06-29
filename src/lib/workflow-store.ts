@@ -83,6 +83,7 @@ import { withTransaction } from "./db.js"
 import {
   createHippoTracer,
   createTraceAttributes,
+  getActiveTraceContext,
   type HippoTracer,
   type TraceAttributes,
 } from "./tracing.js"
@@ -114,6 +115,7 @@ type IRunRow = {
   createdAt: Date
   updatedAt: Date
   completedAt: Date | null
+  traceContext?: string | null
 }
 
 type IAttemptRow = {
@@ -133,6 +135,7 @@ type IAttemptRow = {
   completedAt: Date | null
   createdAt: Date
   updatedAt: Date
+  traceContext?: string | null
 }
 
 type IWaitRow = {
@@ -196,6 +199,7 @@ const mapRun = (row: IRunRow): WorkflowRunRecord => ({
   error: row.error,
   cancelRequestedAt: row.cancelRequestedAt ?? null,
   cancelMode: (row.cancelMode as WorkflowCancelMode | null | undefined) ?? null,
+  traceContext: row.traceContext ?? null,
 })
 
 const mapAttempt = (row: IAttemptRow): WorkflowStepAttemptRecord => ({
@@ -211,6 +215,7 @@ const mapAttempt = (row: IAttemptRow): WorkflowStepAttemptRecord => ({
   output: row.output,
   error: row.error,
   lastHeartbeatAt: row.lastHeartbeatAt ?? null,
+  traceContext: row.traceContext ?? null,
 })
 
 const mapWait = (row: IWaitRow): WorkflowWaitRecord => ({
@@ -269,6 +274,7 @@ const insertAttempt = async (
       attempt,
       contextBefore: run.context,
       input: args.input,
+      traceContext: getActiveTraceContext() ?? null,
     },
     client
   )
@@ -388,6 +394,7 @@ export const createWorkflowStore = (
     input: JsonObject
     currentStepKey: string
     idempotencyKey?: string | null
+    traceContext?: string | null
   }) =>
     withStoreSpan(
       {
@@ -402,8 +409,14 @@ export const createWorkflowStore = (
       },
       () =>
         withTransaction(db, async (client) => {
+          const traceContext = args.traceContext ?? getActiveTraceContext() ?? null
+          const params = {
+            ...args,
+            traceContext,
+          }
+
           if (args.idempotencyKey) {
-            const [idempotentRow] = await startRunIdempotentQuery.run(args, client)
+            const [idempotentRow] = await startRunIdempotentQuery.run(params, client)
 
             if (idempotentRow) {
               const run = mapRun(idempotentRow as unknown as IRunRow)
@@ -440,7 +453,7 @@ export const createWorkflowStore = (
             }
           }
 
-          const [runRow] = await insertRunQuery.run(args, client)
+          const [runRow] = await insertRunQuery.run(params, client)
           const run = mapRun(requireRow(runRow, "Failed to insert workflow run"))
 
           await insertEventQuery.run(
@@ -711,6 +724,7 @@ export const createWorkflowStore = (
               priority: args.priority,
               currentStepKey: args.currentStepKey,
               input: args.input,
+              traceContext: getActiveTraceContext() ?? null,
             },
             client
           )
@@ -2065,6 +2079,7 @@ export const createWorkflowStore = (
           currentStepKey: attempt.stepKey,
           input: sourceRun.input,
           context: attempt.contextBefore,
+          traceContext: getActiveTraceContext() ?? null,
         },
         client
       )

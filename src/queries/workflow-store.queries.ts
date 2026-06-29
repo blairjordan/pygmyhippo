@@ -28,6 +28,7 @@ export interface IInsertRunParams {
   parentStepKey?: string | null | void;
   priority?: number | null | void;
   taskQueue?: string | null | void;
+  traceContext?: string | null | void;
 }
 
 /** 'InsertRun' return type */
@@ -55,6 +56,7 @@ export interface IInsertRunResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -64,7 +66,7 @@ export interface IInsertRunQuery {
   result: IInsertRunResult;
 }
 
-const insertRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"idempotencyKey":true,"input":true},"params":[{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":212,"b":223}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":228,"b":241}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":246,"b":260}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":265,"b":282}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":287,"b":296}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":301,"b":309}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":326,"b":340}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":345,"b":359}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":364,"b":369}]}],"statement":"INSERT INTO workflow_runs (\n  parent_run_id,\n  parent_step_key,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  idempotency_key,\n  input,\n  context\n) VALUES (\n  :parentRunId,\n  :parentStepKey,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :idempotencyKey,\n  :input,\n  '{}'::jsonb\n)\nON CONFLICT (definition_name, idempotency_key)\nDO UPDATE SET\n  idempotency_key = workflow_runs.idempotency_key\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\""};
+const insertRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"idempotencyKey":true,"input":true,"traceContext":true},"params":[{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":229,"b":240}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":245,"b":258}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":263,"b":277}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":282,"b":299}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":304,"b":313}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":318,"b":326}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":343,"b":357}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":362,"b":376}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":381,"b":386}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":406,"b":418}]}],"statement":"INSERT INTO workflow_runs (\n  parent_run_id,\n  parent_step_key,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  idempotency_key,\n  input,\n  context,\n  trace_context\n) VALUES (\n  :parentRunId,\n  :parentStepKey,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :idempotencyKey,\n  :input,\n  '{}'::jsonb,\n  :traceContext\n)\nON CONFLICT (definition_name, idempotency_key)\nDO UPDATE SET\n  idempotency_key = workflow_runs.idempotency_key\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\",\n  trace_context AS \"traceContext\""};
 
 /**
  * Query generated from SQL:
@@ -80,7 +82,8 @@ const insertRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":tru
  *   current_step_key,
  *   idempotency_key,
  *   input,
- *   context
+ *   context,
+ *   trace_context
  * ) VALUES (
  *   :parentRunId,
  *   :parentStepKey,
@@ -92,7 +95,8 @@ const insertRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":tru
  *   :currentStepKey,
  *   :idempotencyKey,
  *   :input,
- *   '{}'::jsonb
+ *   '{}'::jsonb,
+ *   :traceContext
  * )
  * ON CONFLICT (definition_name, idempotency_key)
  * DO UPDATE SET
@@ -121,7 +125,8 @@ const insertRunIR: any = {"usedParamSet":{"parentRunId":true,"parentStepKey":tru
  *   available_at AS "availableAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   completed_at AS "completedAt"
+ *   completed_at AS "completedAt",
+ *   trace_context AS "traceContext"
  * ```
  */
 export const insertRun = new PreparedQuery<IInsertRunParams,IInsertRunResult>(insertRunIR);
@@ -159,6 +164,7 @@ export interface IGetRunByIdResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -168,7 +174,7 @@ export interface IGetRunByIdQuery {
   result: IGetRunByIdResult;
 }
 
-const getRunByIdIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":860,"b":865}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\"\nFROM workflow_runs\nWHERE id = :runId"};
+const getRunByIdIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":895,"b":900}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_runs\nWHERE id = :runId"};
 
 /**
  * Query generated from SQL:
@@ -199,7 +205,8 @@ const getRunByIdIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runI
  *   available_at AS "availableAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   completed_at AS "completedAt"
+ *   completed_at AS "completedAt",
+ *   trace_context AS "traceContext"
  * FROM workflow_runs
  * WHERE id = :runId
  * ```
@@ -270,6 +277,7 @@ export interface IGetRunAttemptsResult {
   status: step_attempt_status;
   stepKey: string;
   stepSeq: number;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -279,7 +287,7 @@ export interface IGetRunAttemptsQuery {
   result: IGetRunAttemptsResult;
 }
 
-const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":382,"b":387}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\nORDER BY step_seq ASC, attempt ASC, created_at ASC"};
+const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":417,"b":422}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\nORDER BY step_seq ASC, attempt ASC, created_at ASC"};
 
 /**
  * Query generated from SQL:
@@ -300,7 +308,8 @@ const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"
  *   last_heartbeat_at AS "lastHeartbeatAt",
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
- *   updated_at AS "updatedAt"
+ *   updated_at AS "updatedAt",
+ *   trace_context AS "traceContext"
  * FROM workflow_step_attempts
  * WHERE run_id = :runId
  * ORDER BY step_seq ASC, attempt ASC, created_at ASC
@@ -393,6 +402,7 @@ export interface IClaimNextRunnableRunResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -402,7 +412,7 @@ export interface IClaimNextRunnableRunQuery {
   result: IClaimNextRunnableRunResult;
 }
 
-const claimNextRunnableRunIR: any = {"usedParamSet":{"taskQueues":true,"workerId":true,"leaseMs":true},"params":[{"name":"taskQueues","required":false,"transform":{"type":"scalar"},"locs":[{"a":118,"b":128}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":428,"b":436}]},{"name":"leaseMs","required":false,"transform":{"type":"scalar"},"locs":[{"a":469,"b":476}]}],"statement":"WITH candidate AS (\n  SELECT id\n  FROM workflow_runs\n  WHERE status IN ('queued', 'running')\n    AND task_queue = ANY(:taskQueues)\n    AND current_step_key IS NOT NULL\n    AND available_at <= now()\n    AND (lease_expires_at IS NULL OR lease_expires_at < now())\n  ORDER BY priority DESC, available_at ASC, created_at ASC\n  FOR UPDATE SKIP LOCKED\n  LIMIT 1\n)\nUPDATE workflow_runs AS runs\nSET\n  status = 'running',\n  lease_owner = :workerId,\n  lease_expires_at = now() + (:leaseMs * interval '1 millisecond'),\n  updated_at = now()\nFROM candidate\nWHERE runs.id = candidate.id\nRETURNING\n  runs.id,\n  runs.parent_run_id AS \"parentRunId\",\n  runs.parent_step_key AS \"parentStepKey\",\n  runs.continued_from_run_id AS \"continuedFromRunId\",\n  runs.branched_from_run_id AS \"branchedFromRunId\",\n  runs.branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  runs.branched_from_attempt_id AS \"branchedFromAttemptId\",\n  runs.superseded_by_run_id AS \"supersededByRunId\",\n  runs.definition_name AS \"definitionName\",\n  runs.definition_version AS \"definitionVersion\",\n  runs.task_queue AS \"taskQueue\",\n  runs.priority,\n  runs.status,\n  runs.current_step_key AS \"currentStepKey\",\n  runs.input,\n  runs.context,\n  runs.result,\n  runs.error,\n  runs.lease_owner AS \"leaseOwner\",\n  runs.lease_expires_at AS \"leaseExpiresAt\",\n  runs.available_at AS \"availableAt\",\n  runs.created_at AS \"createdAt\",\n  runs.updated_at AS \"updatedAt\",\n  runs.completed_at AS \"completedAt\""};
+const claimNextRunnableRunIR: any = {"usedParamSet":{"taskQueues":true,"workerId":true,"leaseMs":true},"params":[{"name":"taskQueues","required":false,"transform":{"type":"scalar"},"locs":[{"a":118,"b":128}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":428,"b":436}]},{"name":"leaseMs","required":false,"transform":{"type":"scalar"},"locs":[{"a":469,"b":476}]}],"statement":"WITH candidate AS (\n  SELECT id\n  FROM workflow_runs\n  WHERE status IN ('queued', 'running')\n    AND task_queue = ANY(:taskQueues)\n    AND current_step_key IS NOT NULL\n    AND available_at <= now()\n    AND (lease_expires_at IS NULL OR lease_expires_at < now())\n  ORDER BY priority DESC, available_at ASC, created_at ASC\n  FOR UPDATE SKIP LOCKED\n  LIMIT 1\n)\nUPDATE workflow_runs AS runs\nSET\n  status = 'running',\n  lease_owner = :workerId,\n  lease_expires_at = now() + (:leaseMs * interval '1 millisecond'),\n  updated_at = now()\nFROM candidate\nWHERE runs.id = candidate.id\nRETURNING\n  runs.id,\n  runs.parent_run_id AS \"parentRunId\",\n  runs.parent_step_key AS \"parentStepKey\",\n  runs.continued_from_run_id AS \"continuedFromRunId\",\n  runs.branched_from_run_id AS \"branchedFromRunId\",\n  runs.branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  runs.branched_from_attempt_id AS \"branchedFromAttemptId\",\n  runs.superseded_by_run_id AS \"supersededByRunId\",\n  runs.definition_name AS \"definitionName\",\n  runs.definition_version AS \"definitionVersion\",\n  runs.task_queue AS \"taskQueue\",\n  runs.priority,\n  runs.status,\n  runs.current_step_key AS \"currentStepKey\",\n  runs.input,\n  runs.context,\n  runs.result,\n  runs.error,\n  runs.lease_owner AS \"leaseOwner\",\n  runs.lease_expires_at AS \"leaseExpiresAt\",\n  runs.available_at AS \"availableAt\",\n  runs.created_at AS \"createdAt\",\n  runs.updated_at AS \"updatedAt\",\n  runs.completed_at AS \"completedAt\",\n  runs.trace_context AS \"traceContext\""};
 
 /**
  * Query generated from SQL:
@@ -451,7 +461,8 @@ const claimNextRunnableRunIR: any = {"usedParamSet":{"taskQueues":true,"workerId
  *   runs.available_at AS "availableAt",
  *   runs.created_at AS "createdAt",
  *   runs.updated_at AS "updatedAt",
- *   runs.completed_at AS "completedAt"
+ *   runs.completed_at AS "completedAt",
+ *   runs.trace_context AS "traceContext"
  * ```
  */
 export const claimNextRunnableRun = new PreparedQuery<IClaimNextRunnableRunParams,IClaimNextRunnableRunResult>(claimNextRunnableRunIR);
@@ -528,6 +539,7 @@ export interface IInsertStepAttemptParams {
   runId?: string | null | void;
   stepKey?: string | null | void;
   stepSeq?: number | null | void;
+  traceContext?: string | null | void;
 }
 
 /** 'InsertStepAttempt' return type */
@@ -547,6 +559,7 @@ export interface IInsertStepAttemptResult {
   status: step_attempt_status;
   stepKey: string;
   stepSeq: number;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -556,7 +569,7 @@ export interface IInsertStepAttemptQuery {
   result: IInsertStepAttemptResult;
 }
 
-const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"kind":true,"stepSeq":true,"attempt":true,"contextBefore":true,"input":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":139,"b":144}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":149,"b":156}]},{"name":"kind","required":false,"transform":{"type":"scalar"},"locs":[{"a":161,"b":165}]},{"name":"stepSeq","required":false,"transform":{"type":"scalar"},"locs":[{"a":170,"b":177}]},{"name":"attempt","required":false,"transform":{"type":"scalar"},"locs":[{"a":182,"b":189}]},{"name":"contextBefore","required":false,"transform":{"type":"scalar"},"locs":[{"a":207,"b":220}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":225,"b":230}]}],"statement":"INSERT INTO workflow_step_attempts (\n  run_id,\n  step_key,\n  kind,\n  step_seq,\n  attempt,\n  status,\n  context_before,\n  input\n) VALUES (\n  :runId,\n  :stepKey,\n  :kind,\n  :stepSeq,\n  :attempt,\n  'started',\n  :contextBefore,\n  :input\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\""};
+const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"kind":true,"stepSeq":true,"attempt":true,"contextBefore":true,"input":true,"traceContext":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":156,"b":161}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":166,"b":173}]},{"name":"kind","required":false,"transform":{"type":"scalar"},"locs":[{"a":178,"b":182}]},{"name":"stepSeq","required":false,"transform":{"type":"scalar"},"locs":[{"a":187,"b":194}]},{"name":"attempt","required":false,"transform":{"type":"scalar"},"locs":[{"a":199,"b":206}]},{"name":"contextBefore","required":false,"transform":{"type":"scalar"},"locs":[{"a":224,"b":237}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":242,"b":247}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":252,"b":264}]}],"statement":"INSERT INTO workflow_step_attempts (\n  run_id,\n  step_key,\n  kind,\n  step_seq,\n  attempt,\n  status,\n  context_before,\n  input,\n  trace_context\n) VALUES (\n  :runId,\n  :stepKey,\n  :kind,\n  :stepSeq,\n  :attempt,\n  'started',\n  :contextBefore,\n  :input,\n  :traceContext\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\""};
 
 /**
  * Query generated from SQL:
@@ -569,7 +582,8 @@ const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"k
  *   attempt,
  *   status,
  *   context_before,
- *   input
+ *   input,
+ *   trace_context
  * ) VALUES (
  *   :runId,
  *   :stepKey,
@@ -578,7 +592,8 @@ const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"k
  *   :attempt,
  *   'started',
  *   :contextBefore,
- *   :input
+ *   :input,
+ *   :traceContext
  * )
  * RETURNING
  *   id,
@@ -596,7 +611,8 @@ const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"k
  *   last_heartbeat_at AS "lastHeartbeatAt",
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
- *   updated_at AS "updatedAt"
+ *   updated_at AS "updatedAt",
+ *   trace_context AS "traceContext"
  * ```
  */
 export const insertStepAttempt = new PreparedQuery<IInsertStepAttemptParams,IInsertStepAttemptResult>(insertStepAttemptIR);
@@ -625,6 +641,7 @@ export interface IGetStepAttemptByIdForRunResult {
   status: step_attempt_status;
   stepKey: string;
   stepSeq: number;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -634,7 +651,7 @@ export interface IGetStepAttemptByIdForRunQuery {
   result: IGetStepAttemptByIdForRunResult;
 }
 
-const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":382,"b":387}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":400,"b":409}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\n  AND id = :attemptId"};
+const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":417,"b":422}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":435,"b":444}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\n  AND id = :attemptId"};
 
 /**
  * Query generated from SQL:
@@ -655,7 +672,8 @@ const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId
  *   last_heartbeat_at AS "lastHeartbeatAt",
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
- *   updated_at AS "updatedAt"
+ *   updated_at AS "updatedAt",
+ *   trace_context AS "traceContext"
  * FROM workflow_step_attempts
  * WHERE run_id = :runId
  *   AND id = :attemptId
@@ -676,6 +694,7 @@ export interface IInsertBranchedRunParams {
   input?: Json | null | void;
   priority?: number | null | void;
   taskQueue?: string | null | void;
+  traceContext?: string | null | void;
 }
 
 /** 'InsertBranchedRun' return type */
@@ -705,6 +724,7 @@ export interface IInsertBranchedRunResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -714,7 +734,7 @@ export interface IInsertBranchedRunQuery {
   result: IInsertBranchedRunResult;
 }
 
-const insertBranchedRunIR: any = {"usedParamSet":{"branchedFromRunId":true,"branchedFromAttemptRunId":true,"branchedFromAttemptId":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true,"context":true},"params":[{"name":"branchedFromRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":241,"b":258}]},{"name":"branchedFromAttemptRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":263,"b":287}]},{"name":"branchedFromAttemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":292,"b":313}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":318,"b":332}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":337,"b":354}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":359,"b":368}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":373,"b":381}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":398,"b":412}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":417,"b":422}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":427,"b":434}]}],"statement":"INSERT INTO workflow_runs (\n  branched_from_run_id,\n  branched_from_attempt_run_id,\n  branched_from_attempt_id,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  input,\n  context\n) VALUES (\n  :branchedFromRunId,\n  :branchedFromAttemptRunId,\n  :branchedFromAttemptId,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :input,\n  :context\n)\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\""};
+const insertBranchedRunIR: any = {"usedParamSet":{"branchedFromRunId":true,"branchedFromAttemptRunId":true,"branchedFromAttemptId":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true,"context":true,"traceContext":true},"params":[{"name":"branchedFromRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":258,"b":275}]},{"name":"branchedFromAttemptRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":280,"b":304}]},{"name":"branchedFromAttemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":309,"b":330}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":335,"b":349}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":354,"b":371}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":376,"b":385}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":390,"b":398}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":415,"b":429}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":434,"b":439}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":444,"b":451}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":456,"b":468}]}],"statement":"INSERT INTO workflow_runs (\n  branched_from_run_id,\n  branched_from_attempt_run_id,\n  branched_from_attempt_id,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  input,\n  context,\n  trace_context\n) VALUES (\n  :branchedFromRunId,\n  :branchedFromAttemptRunId,\n  :branchedFromAttemptId,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :input,\n  :context,\n  :traceContext\n)\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\",\n  trace_context AS \"traceContext\""};
 
 /**
  * Query generated from SQL:
@@ -730,7 +750,8 @@ const insertBranchedRunIR: any = {"usedParamSet":{"branchedFromRunId":true,"bran
  *   status,
  *   current_step_key,
  *   input,
- *   context
+ *   context,
+ *   trace_context
  * ) VALUES (
  *   :branchedFromRunId,
  *   :branchedFromAttemptRunId,
@@ -742,7 +763,8 @@ const insertBranchedRunIR: any = {"usedParamSet":{"branchedFromRunId":true,"bran
  *   'queued',
  *   :currentStepKey,
  *   :input,
- *   :context
+ *   :context,
+ *   :traceContext
  * )
  * RETURNING
  *   id,
@@ -770,7 +792,8 @@ const insertBranchedRunIR: any = {"usedParamSet":{"branchedFromRunId":true,"bran
  *   available_at AS "availableAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   completed_at AS "completedAt"
+ *   completed_at AS "completedAt",
+ *   trace_context AS "traceContext"
  * ```
  */
 export const insertBranchedRun = new PreparedQuery<IInsertBranchedRunParams,IInsertBranchedRunResult>(insertBranchedRunIR);
@@ -1844,6 +1867,7 @@ export interface IGetRunByIdForUpdateResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -1853,7 +1877,7 @@ export interface IGetRunByIdForUpdateQuery {
   result: IGetRunByIdForUpdateResult;
 }
 
-const getRunByIdForUpdateIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":860,"b":865}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\"\nFROM workflow_runs\nWHERE id = :runId\nFOR UPDATE"};
+const getRunByIdForUpdateIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":895,"b":900}]}],"statement":"SELECT\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_runs\nWHERE id = :runId\nFOR UPDATE"};
 
 /**
  * Query generated from SQL:
@@ -1884,7 +1908,8 @@ const getRunByIdForUpdateIR: any = {"usedParamSet":{"runId":true},"params":[{"na
  *   available_at AS "availableAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   completed_at AS "completedAt"
+ *   completed_at AS "completedAt",
+ *   trace_context AS "traceContext"
  * FROM workflow_runs
  * WHERE id = :runId
  * FOR UPDATE
@@ -2964,6 +2989,7 @@ export interface IStartRunIdempotentParams {
   parentStepKey?: string | null | void;
   priority?: number | null | void;
   taskQueue?: string | null | void;
+  traceContext?: string | null | void;
 }
 
 /** 'StartRunIdempotent' return type */
@@ -2994,6 +3020,7 @@ export interface IStartRunIdempotentResult {
   status: workflow_run_status | null;
   supersededByRunId: string | null;
   taskQueue: string | null;
+  traceContext: string | null;
   updatedAt: Date | null;
 }
 
@@ -3003,7 +3030,7 @@ export interface IStartRunIdempotentQuery {
   result: IStartRunIdempotentResult;
 }
 
-const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempotencyKey":true,"parentRunId":true,"parentStepKey":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true},"params":[{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":977,"b":991},{"a":1334,"b":1348}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1019,"b":1033},{"a":1466,"b":1480}]},{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1296,"b":1307}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1314,"b":1327}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":1355,"b":1372}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":1379,"b":1388}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":1395,"b":1403}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1445,"b":1459}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":1487,"b":1492}]}],"statement":"WITH existing_run AS (\n  SELECT\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    FALSE AS inserted\n  FROM workflow_runs\n  WHERE definition_name = :definitionName\n    AND idempotency_key = :idempotencyKey\n), inserted_run AS (\n  INSERT INTO workflow_runs (\n    parent_run_id,\n    parent_step_key,\n    definition_name,\n    definition_version,\n    task_queue,\n    priority,\n    status,\n    current_step_key,\n    idempotency_key,\n    input,\n    context\n  )\n  SELECT\n    :parentRunId,\n    :parentStepKey,\n    :definitionName,\n    :definitionVersion,\n    :taskQueue,\n    :priority,\n    'queued'::workflow_run_status,\n    :currentStepKey,\n    :idempotencyKey,\n    :input,\n    '{}'::jsonb\n  WHERE NOT EXISTS (SELECT 1 FROM existing_run)\n  ON CONFLICT (definition_name, idempotency_key) DO NOTHING\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    TRUE AS inserted\n)\nSELECT * FROM inserted_run\nUNION ALL\nSELECT * FROM existing_run\nLIMIT 1"};
+const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempotencyKey":true,"parentRunId":true,"parentStepKey":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true,"traceContext":true},"params":[{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":1014,"b":1028},{"a":1390,"b":1404}]},{"name":"idempotencyKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1056,"b":1070},{"a":1522,"b":1536}]},{"name":"parentRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1352,"b":1363}]},{"name":"parentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1370,"b":1383}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":1411,"b":1428}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":1435,"b":1444}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":1451,"b":1459}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1501,"b":1515}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":1543,"b":1548}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":1572,"b":1584}]}],"statement":"WITH existing_run AS (\n  SELECT\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    trace_context AS \"traceContext\",\n    FALSE AS inserted\n  FROM workflow_runs\n  WHERE definition_name = :definitionName\n    AND idempotency_key = :idempotencyKey\n), inserted_run AS (\n  INSERT INTO workflow_runs (\n    parent_run_id,\n    parent_step_key,\n    definition_name,\n    definition_version,\n    task_queue,\n    priority,\n    status,\n    current_step_key,\n    idempotency_key,\n    input,\n    context,\n    trace_context\n  )\n  SELECT\n    :parentRunId,\n    :parentStepKey,\n    :definitionName,\n    :definitionVersion,\n    :taskQueue,\n    :priority,\n    'queued'::workflow_run_status,\n    :currentStepKey,\n    :idempotencyKey,\n    :input,\n    '{}'::jsonb,\n    :traceContext\n  WHERE NOT EXISTS (SELECT 1 FROM existing_run)\n  ON CONFLICT (definition_name, idempotency_key) DO NOTHING\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    cancel_requested_at AS \"cancelRequestedAt\",\n    cancel_mode AS \"cancelMode\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    trace_context AS \"traceContext\",\n    TRUE AS inserted\n)\nSELECT * FROM inserted_run\nUNION ALL\nSELECT * FROM existing_run\nLIMIT 1"};
 
 /**
  * Query generated from SQL:
@@ -3036,6 +3063,7 @@ const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempo
  *     created_at AS "createdAt",
  *     updated_at AS "updatedAt",
  *     completed_at AS "completedAt",
+ *     trace_context AS "traceContext",
  *     FALSE AS inserted
  *   FROM workflow_runs
  *   WHERE definition_name = :definitionName
@@ -3052,7 +3080,8 @@ const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempo
  *     current_step_key,
  *     idempotency_key,
  *     input,
- *     context
+ *     context,
+ *     trace_context
  *   )
  *   SELECT
  *     :parentRunId,
@@ -3065,7 +3094,8 @@ const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempo
  *     :currentStepKey,
  *     :idempotencyKey,
  *     :input,
- *     '{}'::jsonb
+ *     '{}'::jsonb,
+ *     :traceContext
  *   WHERE NOT EXISTS (SELECT 1 FROM existing_run)
  *   ON CONFLICT (definition_name, idempotency_key) DO NOTHING
  *   RETURNING
@@ -3095,6 +3125,7 @@ const startRunIdempotentIR: any = {"usedParamSet":{"definitionName":true,"idempo
  *     created_at AS "createdAt",
  *     updated_at AS "updatedAt",
  *     completed_at AS "completedAt",
+ *     trace_context AS "traceContext",
  *     TRUE AS inserted
  * )
  * SELECT * FROM inserted_run
@@ -3295,6 +3326,7 @@ export interface IContinueAsNewInsertRunParams {
   input?: Json | null | void;
   priority?: number | null | void;
   taskQueue?: string | null | void;
+  traceContext?: string | null | void;
 }
 
 /** 'ContinueAsNewInsertRun' return type */
@@ -3324,6 +3356,7 @@ export interface IContinueAsNewInsertRunResult {
   status: workflow_run_status;
   supersededByRunId: string | null;
   taskQueue: string;
+  traceContext: string | null;
   updatedAt: Date;
 }
 
@@ -3333,7 +3366,7 @@ export interface IContinueAsNewInsertRunQuery {
   result: IContinueAsNewInsertRunResult;
 }
 
-const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true},"params":[{"name":"continuedFromRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":182,"b":200}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":205,"b":219}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":224,"b":241}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":246,"b":255}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":260,"b":268}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":285,"b":299}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":304,"b":309}]}],"statement":"INSERT INTO workflow_runs (\n  continued_from_run_id,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  input,\n  context\n) VALUES (\n  :continuedFromRunId,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :input,\n  '{}'::jsonb\n)\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\""};
+const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true,"definitionName":true,"definitionVersion":true,"taskQueue":true,"priority":true,"currentStepKey":true,"input":true,"traceContext":true},"params":[{"name":"continuedFromRunId","required":false,"transform":{"type":"scalar"},"locs":[{"a":199,"b":217}]},{"name":"definitionName","required":false,"transform":{"type":"scalar"},"locs":[{"a":222,"b":236}]},{"name":"definitionVersion","required":false,"transform":{"type":"scalar"},"locs":[{"a":241,"b":258}]},{"name":"taskQueue","required":false,"transform":{"type":"scalar"},"locs":[{"a":263,"b":272}]},{"name":"priority","required":false,"transform":{"type":"scalar"},"locs":[{"a":277,"b":285}]},{"name":"currentStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":302,"b":316}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":321,"b":326}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":346,"b":358}]}],"statement":"INSERT INTO workflow_runs (\n  continued_from_run_id,\n  definition_name,\n  definition_version,\n  task_queue,\n  priority,\n  status,\n  current_step_key,\n  input,\n  context,\n  trace_context\n) VALUES (\n  :continuedFromRunId,\n  :definitionName,\n  :definitionVersion,\n  :taskQueue,\n  :priority,\n  'queued',\n  :currentStepKey,\n  :input,\n  '{}'::jsonb,\n  :traceContext\n)\nRETURNING\n  id,\n  parent_run_id AS \"parentRunId\",\n  parent_step_key AS \"parentStepKey\",\n  continued_from_run_id AS \"continuedFromRunId\",\n  branched_from_run_id AS \"branchedFromRunId\",\n  branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n  branched_from_attempt_id AS \"branchedFromAttemptId\",\n  superseded_by_run_id AS \"supersededByRunId\",\n  definition_name AS \"definitionName\",\n  definition_version AS \"definitionVersion\",\n  task_queue AS \"taskQueue\",\n  priority,\n  status,\n  current_step_key AS \"currentStepKey\",\n  input,\n  context,\n  result,\n  error,\n  lease_owner AS \"leaseOwner\",\n  lease_expires_at AS \"leaseExpiresAt\",\n  cancel_requested_at AS \"cancelRequestedAt\",\n  cancel_mode AS \"cancelMode\",\n  available_at AS \"availableAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  completed_at AS \"completedAt\",\n  trace_context AS \"traceContext\""};
 
 /**
  * Query generated from SQL:
@@ -3347,7 +3380,8 @@ const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true
  *   status,
  *   current_step_key,
  *   input,
- *   context
+ *   context,
+ *   trace_context
  * ) VALUES (
  *   :continuedFromRunId,
  *   :definitionName,
@@ -3357,7 +3391,8 @@ const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true
  *   'queued',
  *   :currentStepKey,
  *   :input,
- *   '{}'::jsonb
+ *   '{}'::jsonb,
+ *   :traceContext
  * )
  * RETURNING
  *   id,
@@ -3385,7 +3420,8 @@ const continueAsNewInsertRunIR: any = {"usedParamSet":{"continuedFromRunId":true
  *   available_at AS "availableAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   completed_at AS "completedAt"
+ *   completed_at AS "completedAt",
+ *   trace_context AS "traceContext"
  * ```
  */
 export const continueAsNewInsertRun = new PreparedQuery<IContinueAsNewInsertRunParams,IContinueAsNewInsertRunResult>(continueAsNewInsertRunIR);

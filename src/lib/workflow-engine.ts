@@ -15,6 +15,7 @@ import type { HippoMetrics } from "./metrics.js"
 import {
   createHippoTracer,
   createTraceAttributes,
+  withTraceContext,
   type HippoTracer,
 } from "./tracing.js"
 import { LostLeaseError, type WorkflowStore } from "./workflow-store.js"
@@ -1233,14 +1234,16 @@ export const createWorkflowEngine = (args: {
         }
 
         args.metrics.claims.inc()
-        return continueRun({
-          definitions,
-          metrics: args.metrics,
-          store: args.store,
-          tracer,
-          workerId,
-          run: claimedRun,
-        })
+        return withTraceContext(claimedRun.traceContext, () =>
+          continueRun({
+            definitions,
+            metrics: args.metrics,
+            store: args.store,
+            tracer,
+            workerId,
+            run: claimedRun,
+          })
+        )
       }
     )
   }
@@ -1252,25 +1255,27 @@ export const createWorkflowEngine = (args: {
       return null
     }
 
-    return tracer.withSpan(
-      {
-        name: "hippo.workflow.run_compensation",
-        attributes: createTraceAttributes({
-          operation: "workflow.run_compensation",
-          workflowName: run.definitionName,
-          workflowVersion: run.definitionVersion,
-          runId: run.id,
-          taskQueue: run.taskQueue,
-        }),
-      },
-      () =>
-        compensateRun({
+    return withTraceContext(run.traceContext, () =>
+      tracer.withSpan(
+        {
+          name: "hippo.workflow.run_compensation",
+          attributes: createTraceAttributes({
+            operation: "workflow.run_compensation",
+            workflowName: run.definitionName,
+            workflowVersion: run.definitionVersion,
+            runId: run.id,
+            taskQueue: run.taskQueue,
+          }),
+        },
+        () =>
+          compensateRun({
           definitions,
           metrics: args.metrics,
           store: args.store,
           tracer,
           run,
         })
+      )
     )
   }
 

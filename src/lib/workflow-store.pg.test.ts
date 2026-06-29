@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url"
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Pool } from "pg"
+import { trace, propagation, context } from "@opentelemetry/api"
+import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks"
+import { W3CTraceContextPropagator } from "@opentelemetry/core"
+import { BasicTracerProvider, SimpleSpanProcessor, InMemorySpanExporter } from "@opentelemetry/sdk-trace-base"
 
 import {
   childStep,
@@ -15,6 +19,7 @@ import {
 import { createMetrics } from "./metrics.js"
 import { createWorkflowEngine } from "./workflow-engine.js"
 import { createWorkflowStore } from "./workflow-store.js"
+import { createHippoTracer, getActiveTraceContext } from "./tracing.js"
 
 const testDatabaseUrl = process.env.HIPPO_PG_TEST_URL
 const migrationsDir = path.resolve(
@@ -101,6 +106,30 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
   let store: ReturnType<typeof createWorkflowStore>
 
   beforeAll(async () => {
+    const contextManager = new AsyncHooksContextManager()
+    contextManager.enable()
+    try {
+      context.setGlobalContextManager(contextManager)
+    } catch {
+      // ignore if already registered
+    }
+
+    const provider = new BasicTracerProvider({
+      spanProcessors: [
+        new SimpleSpanProcessor(new InMemorySpanExporter())
+      ]
+    })
+    try {
+      trace.setGlobalTracerProvider(provider)
+    } catch {
+      // ignore if already registered
+    }
+    try {
+      propagation.setGlobalPropagator(new W3CTraceContextPropagator())
+    } catch {
+      // ignore if already registered
+    }
+
     const adminPool = new Pool({
       connectionString: adminUrl.toString(),
     })
@@ -1064,5 +1093,67 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
 
     expect(new Set(attemptRelations).size).toBe(1)
     expect(new Set(eventRelations).size).toBe(1)
+  })
+
+  it("propagates and saves trace context recursively to child runs and step attempts", async () => {
+    const workflow = defineWorkflow({
+      name: "traceparent-propagation-example",
+      version: 1,
+      startAt: "first",
+      steps: {
+        first: taskStep({
+          kind: "task",
+          run: async () => {
+            return { patch: { done: true } }
+          },
+          next: "end",
+        }),
+        end: endStep(),
+      },
+    })
+
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      store,
+      metrics: createMetrics(),
+    })
+
+    const tracer = createHippoTracer({ scopeName: "test-integration-tracing" })
+
+    let runId!: string
+    let parentTraceId!: string
+
+    await tracer.withSpan({ name: "integration-parent-span" }, async () => {
+      const activeTraceParent = getActiveTraceContext()
+      expect(activeTraceParent).toBeDefined()
+      parentTraceId = activeTraceParent!.split("-")[1]!
+
+      const run = await engine.startRun({
+        workflowName: "traceparent-propagation-example",
+        payload: {},
+        taskQueue: "test-tracing-queue",
+      })
+      runId = run.id
+
+      // Verify that traceContext was saved to the database on run insertion and has the same trace ID
+      const savedRun = await store.getRun(runId)
+      expect(savedRun?.traceContext).toBeDefined()
+      const savedTraceId = savedRun?.traceContext?.split("-")[1]
+      expect(savedTraceId).toBe(parentTraceId)
+    })
+
+    // Execute the step using engine.tick on the isolated task queue
+    for (let i = 0; i < 10; i++) {
+      const result = await engine.tick("pg-test-worker", 15_000, ["test-tracing-queue"])
+      if (!result) break
+    }
+
+    // Verify that the step attempt saved the traceContext to the database and shares the same trace ID
+    const attempts = await store.getRunAttempts(runId)
+    expect(attempts.length).toBeGreaterThan(0)
+    expect(attempts[0]?.traceContext).toBeDefined()
+    expect(attempts[0]?.traceContext).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+    const attemptTraceId = attempts[0]?.traceContext?.split("-")[1]
+    expect(attemptTraceId).toBe(parentTraceId)
   })
 })

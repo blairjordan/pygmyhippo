@@ -42,6 +42,7 @@ export type WorkflowRunRecord = {
   createdAt: Date
   updatedAt: Date
   completedAt: Date | null
+  traceContext?: string | null
 }
 
 export type WorkflowEventRecord = {
@@ -85,6 +86,7 @@ export type WorkflowStepAttemptRecord = {
   completedAt: Date | null
   createdAt: Date
   updatedAt: Date
+  traceContext?: string | null
 }
 
 export type RetryPolicy = {
