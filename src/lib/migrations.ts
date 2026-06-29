@@ -40,6 +40,10 @@ export const migrations = [
   {
     "name": "20260629103000_usage_ledger.sql",
     "sql": "-- migrate:up\nALTER TYPE workflow_run_status ADD VALUE IF NOT EXISTS 'exhausted_budget';\n\nCREATE TABLE workflow_run_usage (\n  id UUID NOT NULL DEFAULT gen_random_uuid(),\n  run_id UUID NOT NULL REFERENCES workflow_runs (id) ON DELETE CASCADE,\n  step_attempt_id UUID,\n  resource TEXT NOT NULL,\n  amount NUMERIC NOT NULL CHECK (amount >= 0),\n  cost_usd NUMERIC CHECK (cost_usd IS NULL OR cost_usd >= 0),\n  dimension TEXT,\n  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  PRIMARY KEY (run_id, id),\n  FOREIGN KEY (run_id, step_attempt_id)\n    REFERENCES workflow_step_attempts (run_id, id)\n    ON DELETE SET NULL\n) PARTITION BY HASH (run_id);\n\nCREATE INDEX workflow_run_usage_run_id_recorded_at_idx\n  ON workflow_run_usage (run_id, recorded_at, id);\n\nCREATE INDEX workflow_run_usage_run_id_resource_idx\n  ON workflow_run_usage (run_id, resource);\n\nDO $$\nBEGIN\n  FOR partition_index IN 0..15 LOOP\n    EXECUTE format(\n      'CREATE TABLE workflow_run_usage_p%s PARTITION OF workflow_run_usage FOR VALUES WITH (modulus 16, remainder %s)',\n      lpad(partition_index::text, 2, '0'),\n      partition_index\n    );\n  END LOOP;\nEND\n$$;\n\nCOMMENT ON TABLE workflow_run_usage IS 'Metered resource usage recorded by workflow runs';\n\n-- migrate:down\nDROP TABLE IF EXISTS workflow_run_usage;\n"
+  },
+  {
+    "name": "20260629224100_run_kv.sql",
+    "sql": "-- migrate:up\nCREATE TABLE workflow_run_kv (\n  run_id UUID NOT NULL REFERENCES workflow_runs (id) ON DELETE CASCADE,\n  key TEXT NOT NULL,\n  value JSONB NOT NULL,\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  PRIMARY KEY (run_id, key)\n);\n\nCREATE INDEX workflow_run_kv_run_id_idx ON workflow_run_kv (run_id);\n\nCOMMENT ON TABLE workflow_run_kv IS 'Run-scoped key-value side channel store';\n\n-- migrate:down\nDROP TABLE IF EXISTS workflow_run_kv;\n"
   }
 ] as const satisfies readonly {
   readonly name: string

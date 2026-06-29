@@ -5,6 +5,7 @@ import type {
   CompensationHandler,
   SleepStepDefinition,
   StepExecutionContext,
+  StepExecutionKV,
   TaskStepDefinition,
   TaskStepResult,
   WaitStepResumeResult,
@@ -48,7 +49,7 @@ export const sleep = (delayMs: number) =>
   })
 
 export const createExecutionContext = (args: {
-  run: WorkflowRunRecord
+  run: WorkflowRunRecord & { kv: StepExecutionKV }
   attempt: number
   stepKey: string
   heartbeat: () => Promise<boolean>
@@ -57,6 +58,7 @@ export const createExecutionContext = (args: {
   db: StepExecutionContext["db"]
   outbox: StepExecutionContext["outbox"]
   transactional: boolean
+  kv: StepExecutionKV
 }): StepExecutionContext => ({
   run: args.run,
   input: args.run.input,
@@ -70,6 +72,7 @@ export const createExecutionContext = (args: {
   db: args.db,
   outbox: args.outbox,
   transactional: args.transactional,
+  kv: args.kv,
 })
 
 export const noopEmit: StepExecutionContext["emit"] = async () => {}
@@ -223,6 +226,17 @@ export const continueRun = async (args: {
           })
         },
       },
+      kv: {
+        get: async (key: string) => {
+          return args.store.getRunKV(activeRun.id, key)
+        },
+        set: async (key: string, value: JsonValue) => {
+          await args.store.setRunKV(activeRun.id, key, value)
+        },
+        delete: async (key: string) => {
+          await args.store.deleteRunKV(activeRun.id, key)
+        },
+      },
     }
 
     if (
@@ -261,7 +275,10 @@ export const continueRun = async (args: {
       const availableAt = resolveSleepUntil(
         step,
         createExecutionContext({
-          run: activeRun,
+          run: {
+            ...activeRun,
+            kv: stepBindings.kv,
+          },
           attempt: 0,
           stepKey,
           heartbeat: async () => false,
@@ -270,6 +287,7 @@ export const continueRun = async (args: {
           db: stepBindings.db,
           outbox: stepBindings.outbox,
           transactional: false,
+          kv: stepBindings.kv,
         })
       )
 
@@ -304,7 +322,10 @@ export const continueRun = async (args: {
           input: createStepInput(activeRun, stepKey),
         })
         const executionContext = createExecutionContext({
-          run: activeRun,
+          run: {
+            ...activeRun,
+            kv: stepBindings.kv,
+          },
           attempt: attempt.attempt,
           stepKey,
           heartbeat: () =>
@@ -338,6 +359,7 @@ export const continueRun = async (args: {
           db: stepBindings.db,
           outbox: stepBindings.outbox,
           transactional: false,
+          kv: stepBindings.kv,
         })
 
         try {
@@ -393,7 +415,10 @@ export const continueRun = async (args: {
               attempt: number
             }) => {
               const signalExecutionContext = createExecutionContext({
-                run: input.run,
+                run: {
+                  ...input.run,
+                  kv: stepBindings.kv,
+                },
                 attempt: input.attempt,
                 stepKey,
                 heartbeat: async () => false,
@@ -402,6 +427,7 @@ export const continueRun = async (args: {
                 db: stepBindings.db,
                 outbox: stepBindings.outbox,
                 transactional: false,
+                kv: stepBindings.kv,
               })
               const result: WaitStepResumeResult = await args.tracer.withSpan(
                 {
@@ -500,7 +526,10 @@ export const continueRun = async (args: {
 
             const resumeChild = async (run: WorkflowRunRecord) => {
               const childExecutionContext = createExecutionContext({
-                run: activeRun,
+                run: {
+                  ...activeRun,
+                  kv: stepBindings.kv,
+                },
                 attempt: attempt.attempt,
                 stepKey,
                 heartbeat: async () => false,
@@ -527,6 +556,7 @@ export const continueRun = async (args: {
                 db: stepBindings.db,
                 outbox: stepBindings.outbox,
                 transactional: false,
+                kv: stepBindings.kv,
               })
               const result: ChildStepResult = await args.tracer.withSpan(
                 {
@@ -1009,6 +1039,17 @@ export const compensateRun = async (args: {
       } satisfies JsonObject)
 
     for (;;) {
+      const kv: StepExecutionKV = {
+        get: async (key: string) => {
+          return args.store.getRunKV(activeRun.id, key)
+        },
+        set: async (key: string, value: JsonValue) => {
+          await args.store.setRunKV(activeRun.id, key, value)
+        },
+        delete: async (key: string) => {
+          await args.store.deleteRunKV(activeRun.id, key)
+        },
+      }
       const compensationAttempt = await args.store.beginStepAttempt({
         runId: activeRun.id,
         stepKey: item.stepKey,
@@ -1040,7 +1081,10 @@ export const compensateRun = async (args: {
             Promise.resolve(
               item.compensation.run(
                 createExecutionContext({
-                  run: activeRun,
+                  run: {
+                    ...activeRun,
+                    kv,
+                  },
                   attempt: compensationAttempt.attempt,
                   stepKey: item.stepKey,
                   heartbeat: async () => false,
@@ -1080,6 +1124,7 @@ export const compensateRun = async (args: {
                     },
                   },
                   transactional: false,
+                  kv,
                 }),
                 cause
               )

@@ -274,6 +274,15 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async wakeParentForChild() {
     return false
   },
+  async getRunKV() {
+    return null
+  },
+  async setRunKV() {
+    return
+  },
+  async deleteRunKV() {
+    return
+  },
 })
 
 describe("app routes", () => {

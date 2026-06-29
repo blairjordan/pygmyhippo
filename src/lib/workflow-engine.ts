@@ -176,9 +176,18 @@ export const createWorkflowEngine = (args: {
               )
             }
 
+            const kv = {
+              get: async (key: string) => args.store.getRunKV(run.id, key),
+              set: async (key: string, value: JsonValue) => args.store.setRunKV(run.id, key, value),
+              delete: async (key: string) => args.store.deleteRunKV(run.id, key),
+            }
+
             const result: WaitStepResumeResult = await step.resume(
               createExecutionContext({
-                run,
+                run: {
+                  ...run,
+                  kv,
+                },
                 attempt: 0,
                 stepKey: wait.stepKey,
                 heartbeat: async () => false,
@@ -210,6 +219,7 @@ export const createWorkflowEngine = (args: {
                   },
                 },
                 transactional: false,
+                kv,
               }),
               input.payload
             )
@@ -271,9 +281,18 @@ export const createWorkflowEngine = (args: {
               )
             }
 
+            const kv = {
+              get: async (key: string) => args.store.getRunKV(run.id, key),
+              set: async (key: string, value: JsonValue) => args.store.setRunKV(run.id, key, value),
+              delete: async (key: string) => args.store.deleteRunKV(run.id, key),
+            }
+
             const result: WaitStepResumeResult = await step.resume(
               createExecutionContext({
-                run,
+                run: {
+                  ...run,
+                  kv,
+                },
                 attempt: 0,
                 stepKey: wait.stepKey,
                 heartbeat: async () => false,
@@ -305,6 +324,7 @@ export const createWorkflowEngine = (args: {
                   },
                 },
                 transactional: false,
+                kv,
               }),
               wait.externalSessionId,
               input.payload
@@ -373,9 +393,18 @@ export const createWorkflowEngine = (args: {
             : { budget: definition.budget }),
         })
 
+        const kv = {
+          get: async (key: string) => args.store.getRunKV(run.id, key),
+          set: async (key: string, value: JsonValue) => args.store.setRunKV(run.id, key, value),
+          delete: async (key: string) => args.store.deleteRunKV(run.id, key),
+        }
+
         await step.cancel(
           createExecutionContext({
-            run,
+            run: {
+              ...run,
+              kv,
+            },
             attempt: 0,
             stepKey: wait.stepKey,
             heartbeat: async () => false,
@@ -407,6 +436,7 @@ export const createWorkflowEngine = (args: {
               },
             },
             transactional: false,
+            kv,
           }),
           wait.externalSessionId
         )

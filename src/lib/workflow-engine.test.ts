@@ -82,6 +82,7 @@ const createStoreStub = () => {
   let attemptCounter = 0
   let eventCounter = 0
   let usageCounter = 0
+  const kvs = new Map<string, JsonValue>()
 
   const now = () => new Date()
 
@@ -458,8 +459,17 @@ const createStoreStub = () => {
       runTask: (context: StepExecutionContext) => Promise<TaskStepResult> | TaskStepResult
       mergeContext: (left: JsonObject, right?: JsonObject) => JsonObject
     }) {
+      const kv = {
+        get: async (key: string) => kvs.get(`${args.run.id}:${key}`) ?? null,
+        set: async (key: string, value: JsonValue) => { kvs.set(`${args.run.id}:${key}`, value) },
+        delete: async (key: string) => { kvs.delete(`${args.run.id}:${key}`) },
+      }
+
       const result = await args.runTask({
-        run: args.run,
+        run: {
+          ...args.run,
+          kv,
+        },
         input: args.run.input,
         context: args.run.context,
         now: now(),
@@ -500,6 +510,7 @@ const createStoreStub = () => {
           enqueue: async () => undefined,
         },
         transactional: true,
+        kv,
       })
       const run = runs.get(args.run.id)!
       const next: WorkflowRunRecord = {
@@ -1041,6 +1052,15 @@ const createStoreStub = () => {
     },
     async wakeParentForChild(childRun: WorkflowRunRecord) {
       return wakeParentForChildRun(childRun)
+    },
+    async getRunKV(runId: string, key: string) {
+      return kvs.get(`${runId}:${key}`) ?? null
+    },
+    async setRunKV(runId: string, key: string, value: JsonValue) {
+      kvs.set(`${runId}:${key}`, value)
+    },
+    async deleteRunKV(runId: string, key: string) {
+      kvs.delete(`${runId}:${key}`)
     },
   }
 }
@@ -2384,5 +2404,78 @@ describe("workflow engine", () => {
     ])
     expect(engine.hasWorkflow("remove")).toBe(false)
     expect(engine.getWorkflow("remove", 1).name).toBe("remove")
+  })
+
+  it("stores, retrieves, and deletes values in the run-scoped KV store", async () => {
+    const values: unknown[] = []
+    const workflow = defineWorkflow({
+      name: "kv-test",
+      version: 1,
+      startAt: "set-step",
+      steps: {
+        "set-step": taskStep({
+          kind: "task",
+          next: "get-step",
+          run: async (ctx) => {
+            await ctx.kv.set("my-key", "hello-world")
+            // Also test ctx.run.kv compatibility
+            await ctx.run.kv.set("my-compat-key", 42)
+            return {
+              patch: { setDone: true }
+            }
+          }
+        }),
+        "get-step": taskStep({
+          kind: "task",
+          next: "delete-step",
+          run: async (ctx) => {
+            const val1 = await ctx.kv.get("my-key")
+            const val2 = await ctx.run.kv.get("my-compat-key")
+            values.push(val1, val2)
+            return {
+              patch: { getDone: true }
+            }
+          }
+        }),
+        "delete-step": taskStep({
+          kind: "task",
+          next: "done",
+          run: async (ctx) => {
+            await ctx.kv.delete("my-key")
+            const val1 = await ctx.kv.get("my-key")
+            values.push(val1)
+            return {
+              patch: { deleteDone: true }
+            }
+          }
+        }),
+        done: endStep()
+      }
+    })
+
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: "kv-test",
+      payload: {},
+    })
+
+    // Tick through set-step
+    await engine.tick("test-worker", 5_000)
+    // Tick through get-step
+    await engine.tick("test-worker", 5_000)
+    // Tick through delete-step
+    await engine.tick("test-worker", 5_000)
+    // Tick through done step to complete the run
+    await engine.tick("test-worker", 5_000)
+
+    const completedRun = await store.getRun(run.id)
+    expect(completedRun?.status).toBe("completed")
+    expect(values).toEqual(["hello-world", 42, null])
   })
 })

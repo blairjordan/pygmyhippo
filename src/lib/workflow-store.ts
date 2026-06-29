@@ -67,6 +67,9 @@ import {
   scheduleSleep as scheduleSleepQuery,
   startRunIdempotent as startRunIdempotentQuery,
   wakeParentForChild as wakeParentForChildQuery,
+  getKv as getKvQuery,
+  setKv as setKvQuery,
+  deleteKv as deleteKvQuery,
 } from "../queries/workflow-store.queries.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
@@ -87,6 +90,7 @@ import type {
   WorkflowUsageInput,
   WorkflowUsageRecord,
   WorkflowWaitRecord,
+  StepExecutionKV,
 } from "../types/workflow.js"
 import type { Database } from "./db.js"
 import { withTransaction } from "./db.js"
@@ -2093,6 +2097,68 @@ export const createWorkflowStore = (
       }
     )
 
+  const getRunKV = async (
+    runId: string,
+    key: string,
+    executor?: Database | PoolClient
+  ) =>
+    withStoreSpan(
+      {
+        name: "get_run_kv",
+        attributes: {
+          "hippo.operation": "store.get_run_kv",
+          "workflow.run.id": runId,
+          "workflow.kv.key": key,
+        },
+      },
+      async () => {
+        const rows = await getKvQuery.run({ runId, key }, executor ?? db)
+        return rows[0]?.value ?? null
+      }
+    )
+
+  const setRunKV = async (
+    runId: string,
+    key: string,
+    value: JsonValue,
+    executor?: Database | PoolClient
+  ) =>
+    withStoreSpan(
+      {
+        name: "set_run_kv",
+        attributes: {
+          "hippo.operation": "store.set_run_kv",
+          "workflow.run.id": runId,
+          "workflow.kv.key": key,
+        },
+      },
+      async () => {
+        // Stringify value to ensure it is sent as a valid JSON string to node-postgres/Postgres
+        const serializedValue = JSON.stringify(value)
+        await setKvQuery.run({ runId, key, value: serializedValue }, executor ?? db)
+      }
+    )
+
+  const deleteRunKV = async (
+    runId: string,
+    key: string,
+    executor?: Database | PoolClient
+  ) =>
+    withStoreSpan(
+      {
+        name: "delete_run_kv",
+        attributes: {
+          "hippo.operation": "store.delete_run_kv",
+          "workflow.run.id": runId,
+          "workflow.kv.key": key,
+        },
+      },
+      async () => {
+        await deleteKvQuery.run({ runId, key }, executor ?? db)
+      }
+    )
+
+
   const claimOutboxMessages = async (limit: number) =>
     withStoreSpan(
       {
@@ -2280,8 +2346,22 @@ export const createWorkflowStore = (
           })
           const now = new Date()
           const pendingUsage: WorkflowUsageInput[] = []
+          const kv: StepExecutionKV = {
+            get: async (key: string) => {
+              return getRunKV(lockedRun.id, key, client)
+            },
+            set: async (key: string, value: JsonValue) => {
+              await setRunKV(lockedRun.id, key, value, client)
+            },
+            delete: async (key: string) => {
+              await deleteRunKV(lockedRun.id, key, client)
+            },
+          }
           const context: StepExecutionContext = {
-            run: lockedRun,
+            run: {
+              ...lockedRun,
+              kv,
+            },
             input: lockedRun.input,
             context: lockedRun.context,
             now,
@@ -2359,6 +2439,7 @@ export const createWorkflowStore = (
               },
             },
             transactional: true,
+            kv,
           }
 
       await client.query("SAVEPOINT hippo_step_body")
@@ -2834,6 +2915,9 @@ export const createWorkflowStore = (
     scheduleSleep,
     startRun,
     wakeParentForChild,
+    getRunKV,
+    setRunKV,
+    deleteRunKV,
   }
 }
 

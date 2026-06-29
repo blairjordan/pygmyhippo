@@ -375,6 +375,25 @@ COMMENT ON TABLE public.workflow_outbox IS 'Transactional outbox records for ext
 
 
 --
+-- Name: workflow_run_kv; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_run_kv (
+    run_id uuid NOT NULL,
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE workflow_run_kv; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.workflow_run_kv IS 'Run-scoped key-value side channel store';
+
+
+--
 -- Name: workflow_run_usage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1764,6 +1783,14 @@ ALTER TABLE ONLY public.workflow_outbox
 
 
 --
+-- Name: workflow_run_kv workflow_run_kv_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_kv
+    ADD CONSTRAINT workflow_run_kv_pkey PRIMARY KEY (run_id, key);
+
+
+--
 -- Name: workflow_run_usage workflow_run_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2343,6 +2370,13 @@ CREATE INDEX workflow_events_p15_run_id_created_at_id_idx ON public.workflow_eve
 --
 
 CREATE INDEX workflow_outbox_available_at_idx ON public.workflow_outbox USING btree (delivered_at, available_at);
+
+
+--
+-- Name: workflow_run_kv_run_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX workflow_run_kv_run_id_idx ON public.workflow_run_kv USING btree (run_id);
 
 
 --
@@ -4175,6 +4209,14 @@ ALTER TABLE ONLY public.workflow_outbox
 
 
 --
+-- Name: workflow_run_kv workflow_run_kv_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_kv
+    ADD CONSTRAINT workflow_run_kv_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: workflow_run_usage workflow_run_usage_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4275,4 +4317,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260625180000'),
     ('20260628223000'),
     ('20260629100000'),
-    ('20260629103000');
+    ('20260629103000'),
+    ('20260629224100');

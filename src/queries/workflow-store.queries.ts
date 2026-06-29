@@ -5127,3 +5127,90 @@ const failTransactionalTaskIR: any = {"usedParamSet":{"error":true,"runId":true,
 export const failTransactionalTask = new PreparedQuery<IFailTransactionalTaskParams,IFailTransactionalTaskResult>(failTransactionalTaskIR);
 
 
+/** 'GetKv' parameters type */
+export interface IGetKvParams {
+  key?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'GetKv' return type */
+export interface IGetKvResult {
+  value: Json;
+}
+
+/** 'GetKv' query type */
+export interface IGetKvQuery {
+  params: IGetKvParams;
+  result: IGetKvResult;
+}
+
+const getKvIR: any = {"usedParamSet":{"runId":true,"key":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":49,"b":54}]},{"name":"key","required":false,"transform":{"type":"scalar"},"locs":[{"a":66,"b":69}]}],"statement":"SELECT value FROM workflow_run_kv\nWHERE run_id = :runId AND key = :key"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT value FROM workflow_run_kv
+ * WHERE run_id = :runId AND key = :key
+ * ```
+ */
+export const getKv = new PreparedQuery<IGetKvParams,IGetKvResult>(getKvIR);
+
+
+/** 'SetKv' parameters type */
+export interface ISetKvParams {
+  key?: string | null | void;
+  runId?: string | null | void;
+  value?: Json | null | void;
+}
+
+/** 'SetKv' return type */
+export type ISetKvResult = void;
+
+/** 'SetKv' query type */
+export interface ISetKvQuery {
+  params: ISetKvParams;
+  result: ISetKvResult;
+}
+
+const setKvIR: any = {"usedParamSet":{"runId":true,"key":true,"value":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":69,"b":74}]},{"name":"key","required":false,"transform":{"type":"scalar"},"locs":[{"a":77,"b":80}]},{"name":"value","required":false,"transform":{"type":"scalar"},"locs":[{"a":83,"b":88}]}],"statement":"INSERT INTO workflow_run_kv (run_id, key, value, updated_at)\nVALUES (:runId, :key, :value, now())\nON CONFLICT (run_id, key) DO UPDATE SET\n  value = EXCLUDED.value,\n  updated_at = now()"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * INSERT INTO workflow_run_kv (run_id, key, value, updated_at)
+ * VALUES (:runId, :key, :value, now())
+ * ON CONFLICT (run_id, key) DO UPDATE SET
+ *   value = EXCLUDED.value,
+ *   updated_at = now()
+ * ```
+ */
+export const setKv = new PreparedQuery<ISetKvParams,ISetKvResult>(setKvIR);
+
+
+/** 'DeleteKv' parameters type */
+export interface IDeleteKvParams {
+  key?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'DeleteKv' return type */
+export type IDeleteKvResult = void;
+
+/** 'DeleteKv' query type */
+export interface IDeleteKvQuery {
+  params: IDeleteKvParams;
+  result: IDeleteKvResult;
+}
+
+const deleteKvIR: any = {"usedParamSet":{"runId":true,"key":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":43,"b":48}]},{"name":"key","required":false,"transform":{"type":"scalar"},"locs":[{"a":60,"b":63}]}],"statement":"DELETE FROM workflow_run_kv\nWHERE run_id = :runId AND key = :key"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * DELETE FROM workflow_run_kv
+ * WHERE run_id = :runId AND key = :key
+ * ```
+ */
+export const deleteKv = new PreparedQuery<IDeleteKvParams,IDeleteKvResult>(deleteKvIR);
+
+

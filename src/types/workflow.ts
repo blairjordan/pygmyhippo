@@ -197,8 +197,14 @@ export type WorkflowStepOutbox = {
   }) => Promise<void>
 }
 
+export type StepExecutionKV = {
+  get: (key: string) => Promise<JsonValue | null>
+  set: (key: string, value: JsonValue) => Promise<void>
+  delete: (key: string) => Promise<void>
+}
+
 export type StepExecutionContext = {
-  run: WorkflowRunRecord
+  run: WorkflowRunRecord & { kv: StepExecutionKV }
   input: JsonObject
   context: JsonObject
   now: Date
@@ -210,6 +216,7 @@ export type StepExecutionContext = {
   db: WorkflowStepDatabase
   outbox: WorkflowStepOutbox
   transactional: boolean
+  kv: StepExecutionKV
 }
 
 export type CompensationHandler = (

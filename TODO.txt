@@ -105,6 +105,21 @@ Tier 3.5 — Temporal feature gaps worth filling (lower priority than DX/Wave-0)
 - [ ] Workflow signals with response (signal-with-result)
   Equivalent to Updates above; pick one shape.
 
+Tier 3.7 — Agent-shaped generic primitives
+- [ ] Step taxonomy + dashboard renderer plugin API
+  API: workflow registration includes step kind tags. Dashboard accepts plugin bundles that register renderers per kind: `registerStepRenderer("agent", AgentPanel)`. Hippo ships generic renderer for unknown kinds.
+- [ ] Retry-with-augmented-input pattern
+  Generic problem: retry where each attempt should be informed by the previous attempt's output + failure reason. Today retries are stateless re-calls.
+  API: `iterativeStep({ initial: { ... }, refine: (prevInput, prevOutput, error) => nextInput, attempt: async (ctx, input) => output, maxAttempts: 3 })`
+- [ ] Operator action plugin API
+  Generic problem: dashboard needs custom operator actions per step kind beyond cancel/retry/rewind. Hippo provides dispatch + audit log row in workflow_events with `kind = "operator.action"`.
+- [ ] Compensation refinement
+  Refine compensation for per-step-kind compensation strategies and idempotency hints.
+- [ ] Run-scoped event query API
+  Filter run events by kind / time range / step attempt. Powers dashboard and external monitoring.
+- [ ] Usage ledger UI panel
+  Cost rollups per run / workflow / day. Top consumers. Top resources. Pure SQL aggregation on top of the usage ledger.
+
 Tier 4 — SDK + packaging (PROMOTED — DX is the pitch, not features)
 - [ ] Tier 1 SDK: TS in-process SDK (ship current capability as a real package)
   Goal: someone can `npm install` hippo, define workflows in their own repo, run a worker + API server, without copy-pasting from this repo. No new runtime features — pure packaging, public API surface, and DX.

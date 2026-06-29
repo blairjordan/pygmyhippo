@@ -1,67 +1,32 @@
 # 🦛 Hippo
 
-Postgres-native durable workflow engine. Built for traditional application workflows AND for AI agent state machines.
+Postgres-native durable workflow engine built to orchestrate AI agent harnesses and long-running application workflows.
 
 Hippo runs long-lived workflows with Postgres as the only durable state layer: leased workers, retries, waits, signals, schedules, child workflows, transactional step commits, and recovery after worker failure.
 
-> **For AI agents:** every serious agent harness — coding agents, research agents, ops agents — eventually needs a durable state machine to drive phase transitions, gate human approvals, retry with critic feedback, track token + USD budgets, and survive worker crashes mid-run. Hippo gives you that without forcing your agent code into a vendor framework. See [For AI Agents](#for-ai-agents) below.
-
 ## Why Hippo
 
-Hippo is built for teams that want durable workflow orchestration without adding a separate control plane or managed dependency to their stack.
+Hippo is built for teams that want durable workflow orchestration and state-machine execution without adding a separate control plane, managed cache, or complex cluster dependencies to their stack.
 
-- Postgres-native durability means workflow state, waits, retries, outbox records, and operator history live in infrastructure most teams already run.
-- Same-transaction step commit lets workflow progress and application writes commit together, which is the practical moat for payment, fulfillment, and callback-heavy systems.
-- Local, staging, and prod environments share one runtime shape and one env model instead of requiring a second operational system to learn.
-- The built-in dashboard and SSE event streams make workflow state visible without standing up a separate frontend.
-- Operator queries now support filtered run listing plus lineage inspection for rewind, fork, continue-as-new, and parent-child chains.
-- TypeScript-first workflow definitions keep business logic in ordinary application code instead of pushing teams into a separate workflow DSL.
-- Version-pinned execution keeps in-flight runs on the exact workflow definition version they started with while new starts pick the latest registered version. Once a version is registered in-process, hot reload does not mutate that version's code.
-- Hot audit tables are hash-partitioned by `run_id`, so run-scoped history reads stay prune-friendly as attempts and events grow.
+- **Postgres-native durability:** Workflow state, waits, retries, outbox records, operator history, and run-scoped KV store live in infrastructure most teams already run.
+- **Same-transaction step commits:** Commit workflow progress and your application writes together, which is the practical moat for billing, fulfillment, and agent state tracking.
+- **Local, staging, and prod parity:** Share one runtime shape and one environment model instead of requiring a separate operational platform.
+- **Built-in dashboard & SSE event streams:** Visualise workflow state and stream execution steps live without standing up extra frontend services.
+- **Operator rewind and fork:** Rewind terminal or in-flight runs to a prior step attempt from context snapshots, or fork into an alternate execution path.
+- **TypeScript-first workflow definitions:** Keep business logic in ordinary code instead of pushing teams into a restricted workflow DSL.
+- **Version-pinned execution:** Pinned in-flight runs execute on their starting definition version while new starts pick up the latest registered code version.
 
-## Where It Fits
+## Core Capabilities
 
-Hippo is strongest when you need:
+Hippo provides the robust orchestrator layer you need underneath your agent harness or business workflows:
 
-- durable application workflows backed by an existing Postgres deployment
-- explicit retries, waits, signals, schedules, and compensation in one runtime
-- operator visibility and intervention without bolting on extra control-plane services
-- transactional workflow steps that touch your domain tables and workflow state together
-
-Hippo is not trying to optimize for polyglot workers or extreme fan-out first. It is optimized for small and mid-scale TypeScript systems that want durable orchestration with simple operations.
-
-## For AI Agents
-
-Agent orchestration is converging on a known shape: deterministic state machine on the outside, agent reasoning on the inside. Phase gates (requirements → architecture → tasks → implementation), tool-scope restrictions per phase, critic loops with bounded retries, human-in-the-loop approvals, durable resume after crashes. None of that is agent-specific work — it is **workflow engine work**.
-
-Hippo is built to be the engine underneath that pattern, without becoming a vendor agent framework. The engine stays generic and the agent layer is a thin contrib package on top.
-
-What Hippo gives an agent harness today:
-
-- **Durable phase transitions.** Each phase of an agent workflow is a step. Step state lives in Postgres. Worker crash mid-run resumes at the last completed step, not from scratch.
-- **Human-in-the-loop via signals + waits.** Pause an agent workflow on a Slack approval, Linear comment, or any external callback. Workflow blocks for hours or days without burning a process. Wait expiry is first-class so workflows never hang forever.
-- **Critic loops with retry policies.** Per-step retry policy with exponential backoff and non-retryable error tags. Compose with iterative refinement so each retry can see the previous attempt's output and critic feedback.
-- **Operator rewind and fork.** When an agent goes sideways at phase 3 of 7, rewind to phase 1 with the original context snapshot. Branch into an alternate plan without losing the original run.
-- **Live observability.** Mermaid render of the workflow, SSE event tail, clickable step inspection. See exactly which phase the agent is in and what it has produced.
-- **Same-transaction step commit.** Commit workflow progress and your application writes (Linear ticket state, artifact records, audit rows) together in one Postgres transaction.
-- **Cron schedules + child workflows.** Autonomous agents that poll an issue tracker, fan out per ticket, and coordinate across multiple in-flight features.
-
-Hippo intentionally does NOT ship:
-
-- An HTTP client for any specific agent harness (Claude Agent SDK, OpenAI Assistants, Hermes, etc.)
-- A phase model — phases are application code, not engine state
-- Prompt templates, critic prompts, or tool allowlists — those live in your agent layer
-- Memory system integrations — agents bring their own memory
-
-The agent-specific glue lives in a separate `@hippo-contrib/agents` package (in development on `feat/agent-primitives`) so the core engine stays usable for any long-running external workload — ML training jobs, video transcode pipelines, payment workflows, browser automation — without dragging in agent vocabulary.
-
-If you are building an agent harness and reaching for LangGraph, Temporal, or Trigger.dev, Hippo is worth looking at:
-
-- LangGraph is a graph DSL inside Python; Hippo is a runtime that lives next to your harness in any language.
-- Temporal is a heavyweight durable execution engine with strict determinism rules; Hippo is a Postgres workflow engine you already know how to operate.
-- Trigger.dev is a TypeScript task platform with Postgres + Redis + 5 containers; Hippo is one Postgres and one worker.
-
-See `AGENTS-TODO.txt` on the `feat/agent-primitives` branch for the in-flight roadmap of agent-shaped generic primitives (long-running external sessions with reattach, token + USD budgets, streamed step events, external cancellation hooks, per-run scratchpads).
+- **Durable Step Execution:** Each phase of execution is a step. Crashes resume at the last completed step instead of starting from scratch.
+- **External Sessions:** Kick off long-running tasks outside the worker process (e.g. agent reasoning loops, browser automation, ML training) and attach to them with heartbeats, event streams, and cancellation hooks.
+- **Human-in-the-Loop (Waits & Signals):** Pause execution for Slack approvals, human comments, or external callbacks. Blocks for hours or days without burning resources.
+- **Budgeting & Cost Caps:** Sum cost and resource usage in real-time, enforcing run-level cost budgets with a dedicated `exhausted_budget` terminal state.
+- **Run-Scoped Key-Value Store:** A run-scoped key-value scratchpad for steps to stash small bits of state across retries or phases.
+- **Critic Loops & Retries:** Configure per-step retry policies with exponential backoff and jitter. Retries can be informed by previous attempts.
+- **OTel Spans & Observability:** Native OpenTelemetry spans nested across HTTP boundaries, worker loops, and store transactions.
 
 ## Features
 
@@ -69,11 +34,11 @@ See `AGENTS-TODO.txt` on the `feat/agent-primitives` branch for the in-flight ro
 <tr>
 <td align="center" width="33%">
 <h3>🐘 Postgres-Native Core</h3>
-Workflow runs, step attempts, waits, signals, schedules, and outbox records live in Postgres. Workers stay stateless and recover from leases instead of carrying hidden local state.
+Workflow runs, step attempts, waits, signals, schedules, outbox records, and KV state live in Postgres. Workers stay stateless and recover from leases instead of carrying hidden local state.
 </td>
 <td align="center" width="33%">
 <h3>⚡ Fast Wakeups</h3>
-Workers still poll safely, but `LISTEN/NOTIFY` wakes them early when new runs, resumed waits, signals, or recovered work become runnable.
+Workers poll safely, but `LISTEN/NOTIFY` wakes them early when new runs, resumed waits, signals, or recovered work become runnable.
 </td>
 <td align="center" width="33%">
 <h3>🔁 Durable Retries</h3>
@@ -90,14 +55,14 @@ Runs can block on external callbacks or named signals, resume exactly once, and 
 A parent run can spawn a child workflow, wait durably for its terminal state, and resume with the child result once the child completes.
 </td>
 <td align="center">
-<h3>🛑 Graceful Cancel And Hard Terminate</h3>
-Graceful cancellation stops at step boundaries. Hard termination cuts the run over to `canceled` immediately, propagates down child runs, and runs compensation for completed task steps that define it.
+<h3>🛑 Graceful Cancel & Hard Terminate</h3>
+Graceful cancellation stops at step boundaries. Hard termination cuts the run over to `canceled` immediately, propagates down child runs, and runs compensation hooks.
 </td>
 </tr>
 <tr>
 <td align="center">
 <h3>📚 Continue As New</h3>
-Task steps can roll long-running work into a fresh run with new payload while preserving an explicit chain link through `continued_from_run_id`.
+Task steps can roll long-running work into a fresh run with a new payload while preserving an explicit chain link through `continued_from_run_id`.
 </td>
 <td align="center">
 <h3>🧵 Queue Routing</h3>
@@ -119,17 +84,38 @@ Transactional steps can enqueue outbox records in the same transaction as step p
 </td>
 <td align="center">
 <h3>⏪ Rewind And Fork</h3>
-Terminal runs can branch from a prior step attempt using the stored pre-step context snapshot, which gives operators a durable way to replay from an earlier boundary without mutating workflow code.
+Terminal runs can branch from a prior step attempt using the stored pre-step context snapshot, allowing operators to branch or replay without mutating workflow code.
 </td>
 </tr>
 <tr>
 <td align="center">
 <h3>🛰️ OTel Tracing</h3>
-HTTP requests, worker ticks, step execution, scheduler dispatch, recovery, outbox delivery, and store mutations emit nested OpenTelemetry-compatible spans so traces stay connected through the full runtime path.
+HTTP requests, worker ticks, step execution, scheduler dispatch, recovery, outbox delivery, and store mutations emit nested OpenTelemetry-compatible spans.
 </td>
 <td align="center">
 <h3>🗂️ Partitioned History</h3>
-`workflow_step_attempts` and `workflow_events` are hash-partitioned by `run_id`, which keeps the hot history tables friendlier to pruning and long-lived fan-out.
+`workflow_step_attempts` and `workflow_events` are hash-partitioned by `run_id` to keep the hot history tables friendly to pruning.
+</td>
+<td align="center">
+<h3>🌐 External Sessions</h3>
+Attach to long-running tasks outside the worker (e.g. agent reasoning, ML training) with heartbeats, live event streams, and cancellation hooks.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>💸 Budgeting & Cost Caps</h3>
+Track cost and resource usage in real-time, enforcing run-level resource or USD budgets with a dedicated `exhausted_budget` terminal state.
+</td>
+<td align="center">
+<h3>🔑 Run-Scoped Key-Value Store</h3>
+A run-scoped key-value scratchpad for steps to stash small bits of state across retries or phases without polluting payload schemas.
+</td>
+<td align="center">
+<h3>📡 Live Event Streaming</h3>
+Emit typed progress events or chunks directly from step execution to stream them live into monitoring UIs via SSE.
+</td>
+</tr>
+</table>bles friendlier to pruning and long-lived fan-out.
 </td>
 </tr>
 </table>

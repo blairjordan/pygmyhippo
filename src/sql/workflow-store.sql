@@ -2392,3 +2392,19 @@ WITH updated_run AS (
   FROM updated_run
 )
 SELECT * FROM updated_run;
+
+/* @name GetKV */
+SELECT value FROM workflow_run_kv
+WHERE run_id = :runId AND key = :key;
+
+/* @name SetKV */
+INSERT INTO workflow_run_kv (run_id, key, value, updated_at)
+VALUES (:runId, :key, :value, now())
+ON CONFLICT (run_id, key) DO UPDATE SET
+  value = EXCLUDED.value,
+  updated_at = now();
+
+/* @name DeleteKV */
+DELETE FROM workflow_run_kv
+WHERE run_id = :runId AND key = :key;
+
