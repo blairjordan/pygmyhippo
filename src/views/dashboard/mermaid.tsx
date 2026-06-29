@@ -33,35 +33,7 @@ export const renderMermaidMount = (
 export const renderMermaidBootstrap = () => `<script type="module">
   import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
 
-  const storageKey = "hippo-dashboard-theme"
   const root = document.documentElement
-  const getPreferredTheme = () => {
-    const storedTheme = window.localStorage.getItem(storageKey)
-
-    if (storedTheme === "light" || storedTheme === "dark") {
-      return storedTheme
-    }
-
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light"
-  }
-
-  const applyTheme = (theme) => {
-    root.classList.toggle("dark", theme === "dark")
-    root.style.colorScheme = theme
-    window.localStorage.setItem(storageKey, theme)
-    const toggle = document.querySelector("[data-theme-toggle]")
-
-    if (toggle instanceof HTMLButtonElement) {
-      toggle.dataset.theme = theme
-      toggle.setAttribute(
-        "aria-label",
-        theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
-      )
-      toggle.textContent = theme === "dark" ? "Light" : "Dark"
-    }
-  }
 
   const renderFallback = () => {
     for (const node of document.querySelectorAll(".mermaid")) {
@@ -163,14 +135,11 @@ export const renderMermaidBootstrap = () => `<script type="module">
     }
   }
 
-  applyTheme(getPreferredTheme())
-  await renderMermaids()
-
-  document.querySelector("[data-theme-toggle]")?.addEventListener("click", async () => {
-    const nextTheme = root.classList.contains("dark") ? "light" : "dark"
-    applyTheme(nextTheme)
+  window.__hippoOnThemeChange = async () => {
     await renderMermaids()
-  })
+  }
+
+  await renderMermaids()
 </script>
 <script>
   // Add a click registry object for the actions used in window.hippoMermaidActivate
