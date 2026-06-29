@@ -1,7 +1,7 @@
 {
   "name": "@hippo/core",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Hippo core engine, store, tracing, and shared runtime types",
   "engines": {

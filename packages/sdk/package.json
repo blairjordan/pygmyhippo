@@ -1,7 +1,7 @@
 {
   "name": "@hippo/sdk",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Hippo workflow definition helpers and TypeScript-first SDK surface",
   "engines": {

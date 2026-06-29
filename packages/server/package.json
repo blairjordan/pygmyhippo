@@ -1,7 +1,7 @@
 {
   "name": "@hippo/server",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Hippo Fastify app, worker loop, recovery loop, and server bootstrap helpers",
   "engines": {

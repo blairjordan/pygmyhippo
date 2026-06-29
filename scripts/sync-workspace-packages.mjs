@@ -190,7 +190,7 @@ for (const pkg of packages) {
   const manifest = {
     name: `@hippo/${pkg.directory}`,
     version: rootPackageJson.version,
-    private: true,
+    private: false,
     type: "module",
     description: pkg.description,
     engines: rootPackageJson.engines,
