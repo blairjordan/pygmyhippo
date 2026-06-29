@@ -2187,6 +2187,94 @@ const recordExternalHeartbeatIR: any = {"usedParamSet":{"externalSessionId":true
 export const recordExternalHeartbeat = new PreparedQuery<IRecordExternalHeartbeatParams,IRecordExternalHeartbeatResult>(recordExternalHeartbeatIR);
 
 
+/** 'RecordExternalSessionEvent' parameters type */
+export interface IRecordExternalSessionEventParams {
+  data?: Json | null | void;
+  eventType?: string | null | void;
+  externalSessionId?: string | null | void;
+  type?: string | null | void;
+}
+
+/** 'RecordExternalSessionEvent' return type */
+export interface IRecordExternalSessionEventResult {
+  attemptId: string | null;
+  eventId: string | null;
+  runId: string | null;
+  status: string | null;
+  stepKey: string | null;
+}
+
+/** 'RecordExternalSessionEvent' query type */
+export interface IRecordExternalSessionEventQuery {
+  params: IRecordExternalSessionEventParams;
+  result: IRecordExternalSessionEventResult;
+}
+
+const recordExternalSessionEventIR: any = {"usedParamSet":{"externalSessionId":true,"eventType":true,"type":true,"data":true},"params":[{"name":"externalSessionId","required":false,"transform":{"type":"scalar"},"locs":[{"a":116,"b":133},{"a":594,"b":611}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":804,"b":813}]},{"name":"type","required":false,"transform":{"type":"scalar"},"locs":[{"a":860,"b":864}]},{"name":"data","required":false,"transform":{"type":"scalar"},"locs":[{"a":893,"b":897}]}],"statement":"WITH locked_wait AS (\n  SELECT\n    id,\n    run_id,\n    step_key\n  FROM workflow_waits\n  WHERE external_session_id = :externalSessionId\n    AND status = 'open'\n  ORDER BY created_at DESC\n  LIMIT 1\n  FOR UPDATE\n), active_run AS (\n  SELECT id\n  FROM workflow_runs\n  WHERE id IN (SELECT run_id FROM locked_wait)\n    AND status = 'waiting'\n    AND current_step_key IN (SELECT step_key FROM locked_wait)\n), active_attempt AS (\n  SELECT id\n  FROM workflow_step_attempts\n  WHERE run_id IN (SELECT id FROM active_run)\n    AND step_key IN (SELECT step_key FROM locked_wait)\n    AND external_session_id = :externalSessionId\n  ORDER BY created_at DESC\n  LIMIT 1\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT\n    id,\n    (SELECT step_key FROM locked_wait),\n    :eventType,\n    jsonb_build_object(\n      'type',\n      :type::text,\n      'data',\n      :data::jsonb,\n      'stepKey',\n      (SELECT step_key FROM locked_wait),\n      'stepAttemptId',\n      (SELECT id FROM active_attempt)\n    )\n  FROM active_run\n  WHERE EXISTS (SELECT 1 FROM active_attempt)\n  RETURNING id\n)\nSELECT\n  CASE\n    WHEN NOT EXISTS (SELECT 1 FROM locked_wait) THEN 'missing'\n    WHEN NOT EXISTS (SELECT 1 FROM active_attempt) THEN 'stale'\n    ELSE 'recorded'\n  END AS status,\n  (SELECT id FROM active_run) AS \"runId\",\n  (SELECT step_key FROM locked_wait) AS \"stepKey\",\n  (SELECT id FROM active_attempt) AS \"attemptId\",\n  (SELECT id FROM inserted_event) AS \"eventId\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH locked_wait AS (
+ *   SELECT
+ *     id,
+ *     run_id,
+ *     step_key
+ *   FROM workflow_waits
+ *   WHERE external_session_id = :externalSessionId
+ *     AND status = 'open'
+ *   ORDER BY created_at DESC
+ *   LIMIT 1
+ *   FOR UPDATE
+ * ), active_run AS (
+ *   SELECT id
+ *   FROM workflow_runs
+ *   WHERE id IN (SELECT run_id FROM locked_wait)
+ *     AND status = 'waiting'
+ *     AND current_step_key IN (SELECT step_key FROM locked_wait)
+ * ), active_attempt AS (
+ *   SELECT id
+ *   FROM workflow_step_attempts
+ *   WHERE run_id IN (SELECT id FROM active_run)
+ *     AND step_key IN (SELECT step_key FROM locked_wait)
+ *     AND external_session_id = :externalSessionId
+ *   ORDER BY created_at DESC
+ *   LIMIT 1
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT
+ *     id,
+ *     (SELECT step_key FROM locked_wait),
+ *     :eventType,
+ *     jsonb_build_object(
+ *       'type',
+ *       :type::text,
+ *       'data',
+ *       :data::jsonb,
+ *       'stepKey',
+ *       (SELECT step_key FROM locked_wait),
+ *       'stepAttemptId',
+ *       (SELECT id FROM active_attempt)
+ *     )
+ *   FROM active_run
+ *   WHERE EXISTS (SELECT 1 FROM active_attempt)
+ *   RETURNING id
+ * )
+ * SELECT
+ *   CASE
+ *     WHEN NOT EXISTS (SELECT 1 FROM locked_wait) THEN 'missing'
+ *     WHEN NOT EXISTS (SELECT 1 FROM active_attempt) THEN 'stale'
+ *     ELSE 'recorded'
+ *   END AS status,
+ *   (SELECT id FROM active_run) AS "runId",
+ *   (SELECT step_key FROM locked_wait) AS "stepKey",
+ *   (SELECT id FROM active_attempt) AS "attemptId",
+ *   (SELECT id FROM inserted_event) AS "eventId"
+ * ```
+ */
+export const recordExternalSessionEvent = new PreparedQuery<IRecordExternalSessionEventParams,IRecordExternalSessionEventResult>(recordExternalSessionEventIR);
+
+
 /** 'CountOpenWaits' parameters type */
 export type ICountOpenWaitsParams = void;
 

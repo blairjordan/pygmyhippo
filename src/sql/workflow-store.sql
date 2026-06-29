@@ -999,6 +999,63 @@ SELECT
   (SELECT step_key FROM locked_wait) AS "stepKey",
   (SELECT id FROM updated_attempt) AS "attemptId";
 
+/* @name RecordExternalSessionEvent */
+WITH locked_wait AS (
+  SELECT
+    id,
+    run_id,
+    step_key
+  FROM workflow_waits
+  WHERE external_session_id = :externalSessionId
+    AND status = 'open'
+  ORDER BY created_at DESC
+  LIMIT 1
+  FOR UPDATE
+), active_run AS (
+  SELECT id
+  FROM workflow_runs
+  WHERE id IN (SELECT run_id FROM locked_wait)
+    AND status = 'waiting'
+    AND current_step_key IN (SELECT step_key FROM locked_wait)
+), active_attempt AS (
+  SELECT id
+  FROM workflow_step_attempts
+  WHERE run_id IN (SELECT id FROM active_run)
+    AND step_key IN (SELECT step_key FROM locked_wait)
+    AND external_session_id = :externalSessionId
+  ORDER BY created_at DESC
+  LIMIT 1
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT
+    id,
+    (SELECT step_key FROM locked_wait),
+    :eventType,
+    jsonb_build_object(
+      'type',
+      :type::text,
+      'data',
+      :data::jsonb,
+      'stepKey',
+      (SELECT step_key FROM locked_wait),
+      'stepAttemptId',
+      (SELECT id FROM active_attempt)
+    )
+  FROM active_run
+  WHERE EXISTS (SELECT 1 FROM active_attempt)
+  RETURNING id
+)
+SELECT
+  CASE
+    WHEN NOT EXISTS (SELECT 1 FROM locked_wait) THEN 'missing'
+    WHEN NOT EXISTS (SELECT 1 FROM active_attempt) THEN 'stale'
+    ELSE 'recorded'
+  END AS status,
+  (SELECT id FROM active_run) AS "runId",
+  (SELECT step_key FROM locked_wait) AS "stepKey",
+  (SELECT id FROM active_attempt) AS "attemptId",
+  (SELECT id FROM inserted_event) AS "eventId";
+
 /* @name CountOpenWaits */
 SELECT COUNT(*)::int AS "waitCount"
 FROM workflow_waits

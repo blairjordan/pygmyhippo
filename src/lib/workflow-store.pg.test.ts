@@ -218,6 +218,12 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
                 idempotencyKey: context.idempotencyKey,
               },
             })
+            await context.emit({
+              type: "progress",
+              data: {
+                pct: 1,
+              },
+            })
 
             return {
               patch: {
@@ -251,6 +257,7 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
       delivered_at: Date | null
     }>("SELECT topic, payload, delivered_at FROM workflow_outbox")
     const completedRun = await store.getRun(run.id)
+    const events = await store.getRunEvents(run.id)
 
     expect(savedRows.rows).toHaveLength(1)
     expect(savedRows.rows[0]?.id).toBe(`${run.id}:save`)
@@ -259,6 +266,13 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
     expect(outboxRows.rows[0]?.payload.idempotencyKey).toBe(`${run.id}:save`)
     expect(completedRun?.status).toBe("completed")
     expect(completedRun?.context.saved).toBe(true)
+    expect(
+      events.some(
+        (event) =>
+          event.eventType === "step.emit:progress" &&
+          event.payload.stepKey === "save"
+      )
+    ).toBe(true)
   })
 
   it("rolls back user writes and outbox messages when a transactional task fails", async () => {
@@ -283,6 +297,12 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
               topic: "email",
               payload: {
                 idempotencyKey: context.idempotencyKey,
+              },
+            })
+            await context.emit({
+              type: "progress",
+              data: {
+                pct: 0.25,
               },
             })
 
@@ -319,10 +339,14 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
       [`${run.id}:save`]
     )
     const failedRun = await store.getRun(run.id)
+    const events = await store.getRunEvents(run.id)
 
     expect(tableLookup.rows[0]?.exists).toBeNull()
     expect(outboxRows.rows).toHaveLength(0)
     expect(failedRun?.status).toBe("failed")
+    expect(
+      events.some((event) => event.eventType === "step.emit:progress")
+    ).toBe(false)
   })
 
   it("runs child workflows and resumes the parent when the child completes", async () => {
@@ -519,6 +543,30 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
           event.eventType === "step.external_heartbeat" &&
           event.payload.progress === 0.5 &&
           event.payload.message === "encoding"
+      )
+    ).toBe(true)
+
+    const emitted = await store.recordExternalSessionEvent({
+      externalSessionId: "pg-transcode-123",
+      type: "progress",
+      data: {
+        pct: 0.75,
+      },
+    })
+    const emittedEvents = await store.getRunEvents(run.id)
+
+    expect(emitted).toMatchObject({
+      status: "recorded",
+      runId: run.id,
+      stepKey: "submit",
+      attemptId: submitAttempt?.id,
+    })
+    expect(
+      emittedEvents.some(
+        (event) =>
+          event.eventType === "step.emit:progress" &&
+          event.payload.type === "progress" &&
+          event.payload.stepAttemptId === submitAttempt?.id
       )
     ).toBe(true)
 

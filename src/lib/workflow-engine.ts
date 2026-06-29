@@ -160,6 +160,7 @@ const createExecutionContext = (args: {
   attempt: number
   stepKey: string
   heartbeat: () => Promise<boolean>
+  emit: StepExecutionContext["emit"]
   db: StepExecutionContext["db"]
   outbox: StepExecutionContext["outbox"]
   transactional: boolean
@@ -171,10 +172,13 @@ const createExecutionContext = (args: {
   attempt: args.attempt,
   idempotencyKey: `${args.run.id}:${args.stepKey}`,
   heartbeat: args.heartbeat,
+  emit: args.emit,
   db: args.db,
   outbox: args.outbox,
   transactional: args.transactional,
 })
+
+const noopEmit: StepExecutionContext["emit"] = async () => {}
 
 const createStepInput = (
   run: WorkflowRunRecord,
@@ -450,6 +454,7 @@ const continueRun = async (args: {
           attempt: 0,
           stepKey,
           heartbeat: async () => false,
+          emit: noopEmit,
           db: stepBindings.db,
           outbox: stepBindings.outbox,
           transactional: false,
@@ -498,6 +503,15 @@ const continueRun = async (args: {
               workerId: args.workerId,
               leaseMs: 15_000,
             }),
+          emit: async (event) => {
+            await args.store.emitStepEvent({
+              runId: activeRun.id,
+              stepKey,
+              stepAttemptId: attempt.id,
+              type: event.type,
+              data: event.data,
+            })
+          },
           db: stepBindings.db,
           outbox: stepBindings.outbox,
           transactional: false,
@@ -560,6 +574,7 @@ const continueRun = async (args: {
             attempt: input.attempt,
             stepKey,
             heartbeat: async () => false,
+            emit: noopEmit,
             db: stepBindings.db,
             outbox: stepBindings.outbox,
             transactional: false,
@@ -665,6 +680,15 @@ const continueRun = async (args: {
             attempt: attempt.attempt,
             stepKey,
             heartbeat: async () => false,
+            emit: async (event) => {
+              await args.store.emitStepEvent({
+                runId: activeRun.id,
+                stepKey,
+                stepAttemptId: attempt.id,
+                type: event.type,
+                data: event.data,
+              })
+            },
             db: stepBindings.db,
             outbox: stepBindings.outbox,
             transactional: false,
@@ -1145,6 +1169,15 @@ const compensateRun = async (args: {
               attempt: compensationAttempt.attempt,
               stepKey: item.stepKey,
               heartbeat: async () => false,
+              emit: async (event) => {
+                await args.store.emitStepEvent({
+                  runId: activeRun.id,
+                  stepKey: item.stepKey,
+                  stepAttemptId: compensationAttempt.id,
+                  type: event.type,
+                  data: event.data,
+                })
+              },
               db: {
                 query: args.store.queryStepDatabase,
               },
@@ -1365,6 +1398,7 @@ export const createWorkflowEngine = (args: {
               attempt: 0,
               stepKey: wait.stepKey,
               heartbeat: async () => false,
+              emit: noopEmit,
               db: {
                 query: args.store.queryStepDatabase,
               },
@@ -1448,6 +1482,7 @@ export const createWorkflowEngine = (args: {
                 attempt: 0,
                 stepKey: wait.stepKey,
                 heartbeat: async () => false,
+                emit: noopEmit,
                 db: {
                   query: args.store.queryStepDatabase,
                 },

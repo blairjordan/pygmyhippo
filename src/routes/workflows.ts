@@ -80,6 +80,18 @@ const externalHeartbeatBodySchema = z.object({
     .optional(),
 })
 
+const externalSessionEventsBodySchema = z.object({
+  events: z
+    .array(
+      z.object({
+        type: z.string().trim().min(1).max(200),
+        data: jsonValueSchema,
+      })
+    )
+    .min(1)
+    .max(100),
+})
+
 const operatorListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
 })
@@ -1517,6 +1529,62 @@ export const createWorkflowRoutes = (args: {
           runId: heartbeat.runId,
           stepKey: heartbeat.stepKey,
           attemptId: heartbeat.attemptId,
+        }
+      }
+    )
+  })
+
+  app.post("/v1/external-sessions/:externalId/events", async (request, reply) => {
+    return traceRequest(
+      args.tracer,
+      {
+        name: "hippo.http.external_session_events",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.external_session_events",
+          route: "/v1/external-sessions/:externalId/events",
+        }),
+      },
+      async () => {
+        const rawBody = (request.body ?? {}) as JsonValue
+        requireCallbackAuth(app, request, rawBody, args.auth)
+
+        const params = externalSessionParamsSchema.parse(request.params)
+        const body = externalSessionEventsBodySchema.parse(request.body ?? {})
+        const recordedEvents = []
+
+        for (const event of body.events) {
+          const recorded = await args.store.recordExternalSessionEvent({
+            externalSessionId: params.externalId,
+            type: event.type,
+            data: event.data,
+          })
+
+          if (recorded.status === "missing") {
+            throw app.httpErrors.notFound(
+              `Open external session "${params.externalId}" not found`
+            )
+          }
+
+          if (recorded.status === "stale") {
+            throw app.httpErrors.conflict(
+              `External session "${params.externalId}" is not accepting events`
+            )
+          }
+
+          recordedEvents.push(recorded)
+        }
+
+        reply.code(202)
+        return {
+          outcome: "recorded",
+          count: recordedEvents.length,
+          events: recordedEvents.map((event) => ({
+            runId: event.runId,
+            stepKey: event.stepKey,
+            attemptId: event.attemptId,
+            eventId: event.eventId,
+          })),
         }
       }
     )

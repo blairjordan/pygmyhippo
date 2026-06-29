@@ -53,6 +53,7 @@ import {
   ping as pingQuery,
   recoverExpiredLeases as recoverExpiredLeasesQuery,
   recordExternalHeartbeat as recordExternalHeartbeatQuery,
+  recordExternalSessionEvent as recordExternalSessionEventQuery,
   requestCancelRun as requestCancelRunQuery,
   rescheduleAfterFire as rescheduleAfterFireQuery,
   retryTransactionalTask as retryTransactionalTaskQuery,
@@ -137,6 +138,8 @@ type IAttemptRow = {
   createdAt: Date
   updatedAt: Date
   traceContext?: string | null
+  externalSessionId?: string | null
+  externalSessionKind?: string | null
 }
 
 type IWaitRow = {
@@ -219,6 +222,8 @@ const mapAttempt = (row: IAttemptRow): WorkflowStepAttemptRecord => ({
   error: row.error,
   lastHeartbeatAt: row.lastHeartbeatAt ?? null,
   traceContext: row.traceContext ?? null,
+  externalSessionId: row.externalSessionId ?? null,
+  externalSessionKind: row.externalSessionKind ?? null,
 })
 
 const mapWait = (row: IWaitRow): WorkflowWaitRecord => ({
@@ -507,6 +512,50 @@ export const createWorkflowStore = (
         return rows.map(mapEvent)
       }
     )
+  }
+
+  const insertStepEvent = async (args: {
+    runId: string
+    stepKey: string
+    stepAttemptId: string
+    type: string
+    data: JsonValue
+    executor: Database | PoolClient
+  }) => {
+    if (args.type.trim().length === 0) {
+      throw new Error("Step event type must not be empty")
+    }
+
+    const [row] = await insertEventQuery.run(
+      {
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: `step.emit:${args.type}`,
+        payload: {
+          type: args.type,
+          data: args.data,
+          stepKey: args.stepKey,
+          stepAttemptId: args.stepAttemptId,
+        },
+      },
+      args.executor
+    )
+    return mapEvent(requireRow(row, "Failed to insert step event"))
+  }
+
+  const emitStepEvent = async (args: {
+    runId: string
+    stepKey: string
+    stepAttemptId: string
+    type: string
+    data: JsonValue
+  }) => {
+    const event = await insertStepEvent({
+      ...args,
+      executor: db,
+    })
+    await notifyRunEvent(args.runId)
+    return event
   }
 
   const getRunAttempts = async (runId: string) => {
@@ -1314,6 +1363,55 @@ export const createWorkflowStore = (
       }
     )
 
+  const recordExternalSessionEvent = async (args: {
+    externalSessionId: string
+    type: string
+    data: JsonValue
+  }) =>
+    withStoreSpan(
+      {
+        name: "record_external_session_event",
+        attributes: {
+          "hippo.operation": "store.record_external_session_event",
+          "workflow.external_session.id": args.externalSessionId,
+          "workflow.event_type": args.type,
+        },
+      },
+      async () => {
+        if (args.type.trim().length === 0) {
+          throw new Error("Step event type must not be empty")
+        }
+
+        const [row] = await recordExternalSessionEventQuery.run(
+          {
+            externalSessionId: args.externalSessionId,
+            type: args.type,
+            eventType: `step.emit:${args.type}`,
+            data: args.data,
+          },
+          db
+        )
+        const result = requireRow(row, "Failed to record external session event")
+
+        if (result.runId) {
+          await notifyRunEvent(result.runId)
+        }
+
+        return {
+          status:
+            result.status === "recorded" ||
+            result.status === "missing" ||
+            result.status === "stale"
+              ? result.status
+              : "stale",
+          runId: result.runId,
+          stepKey: result.stepKey,
+          attemptId: result.attemptId,
+          eventId: result.eventId === null ? null : Number(result.eventId),
+        }
+      }
+    )
+
   const expireOpenWaits = async (args: { limit: number }) => {
     return withStoreSpan(
       {
@@ -1926,6 +2024,16 @@ export const createWorkflowStore = (
             attempt: attempt.attempt,
             idempotencyKey: `${lockedRun.id}:${args.stepKey}`,
             heartbeat: async () => false,
+            emit: async (event) => {
+              await insertStepEvent({
+                runId: lockedRun.id,
+                stepKey: args.stepKey,
+                stepAttemptId: attempt.id,
+                type: event.type,
+                data: event.data,
+                executor: client,
+              })
+            },
             db: {
               query: async <T extends object>(
                 text: string,
@@ -2330,6 +2438,7 @@ export const createWorkflowStore = (
     consumeSignal,
     enqueueOutbox,
     extendLease,
+    emitStepEvent,
     executeTransactionalTask,
     expireOpenWaits,
     failStepAttempt,
@@ -2353,6 +2462,7 @@ export const createWorkflowStore = (
     markRunCompensationFailed,
     queryStepDatabase,
     recordExternalHeartbeat,
+    recordExternalSessionEvent,
     recoverExpiredLeases,
     requestCancelRun,
     resumeExternalSession,

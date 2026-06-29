@@ -181,6 +181,7 @@ export type StepExecutionContext = {
   attempt: number
   idempotencyKey: string
   heartbeat: () => Promise<boolean>
+  emit: (event: { type: string; data: JsonValue }) => Promise<void>
   db: WorkflowStepDatabase
   outbox: WorkflowStepOutbox
   transactional: boolean

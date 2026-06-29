@@ -379,6 +379,25 @@ const createStoreStub = () => {
     async extendLease() {
       return true
     },
+    async emitStepEvent(args: {
+      runId: string
+      stepKey: string
+      stepAttemptId: string
+      type: string
+      data: JsonValue
+    }) {
+      return appendEvent({
+        runId: args.runId,
+        stepKey: args.stepKey,
+        eventType: `step.emit:${args.type}`,
+        payload: {
+          type: args.type,
+          data: args.data,
+          stepKey: args.stepKey,
+          stepAttemptId: args.stepAttemptId,
+        },
+      })
+    },
     async expireOpenWaits(args: { limit: number }) {
       let expiredCount = 0
 
@@ -436,6 +455,19 @@ const createStoreStub = () => {
         attempt: 1,
         idempotencyKey: `${args.run.id}:${args.stepKey}`,
         heartbeat: async () => false,
+        emit: async (event) => {
+          appendEvent({
+            runId: args.run.id,
+            stepKey: args.stepKey,
+            eventType: `step.emit:${event.type}`,
+            payload: {
+              type: event.type,
+              data: event.data,
+              stepKey: args.stepKey,
+              stepAttemptId: "transactional-attempt",
+            },
+          })
+        },
         db: {
           query: async () => ({
             rows: [],
@@ -589,6 +621,8 @@ const createStoreStub = () => {
       attempt.status = "completed"
       attempt.output = args.output
       attempt.completedAt = now()
+      attempt.externalSessionId = args.externalSessionId ?? null
+      attempt.externalSessionKind = args.externalSessionKind ?? null
       waits.set(args.correlationKey, {
         id: `wait-${++waitCounter}`,
         runId: run.id,
@@ -630,6 +664,64 @@ const createStoreStub = () => {
         runId: null,
         stepKey: null,
         attemptId: null,
+      }
+    },
+    async recordExternalSessionEvent(args: {
+      externalSessionId: string
+      type: string
+      data: JsonValue
+    }) {
+      const wait = [...waits.values()].find(
+        (candidate) =>
+          candidate.externalSessionId === args.externalSessionId &&
+          candidate.status === "open"
+      )
+
+      if (!wait) {
+        return {
+          status: "missing" as const,
+          runId: null,
+          stepKey: null,
+          attemptId: null,
+          eventId: null,
+        }
+      }
+
+      const attempt = attempts.find(
+        (candidate) =>
+          candidate.runId === wait.runId &&
+          candidate.stepKey === wait.stepKey &&
+          candidate.externalSessionId === args.externalSessionId
+      )
+
+      if (!attempt) {
+        return {
+          status: "stale" as const,
+          runId: wait.runId,
+          stepKey: wait.stepKey,
+          attemptId: null,
+          eventId: null,
+        }
+      }
+
+      const event = appendEvent({
+        runId: wait.runId,
+        stepKey: wait.stepKey,
+        eventType: `step.emit:${args.type}`,
+        payload: {
+          type: args.type,
+          data: args.data,
+          stepKey: wait.stepKey,
+          stepAttemptId: attempt.id,
+        },
+      })
+
+      return {
+        status: "recorded" as const,
+        runId: wait.runId,
+        stepKey: wait.stepKey,
+        attemptId: attempt.id,
+        eventId: event.id,
       }
     },
     async resumeWait(args: {
@@ -1339,6 +1431,66 @@ describe("workflow engine", () => {
     }
   })
 
+  it("persists step body emitted events", async () => {
+    const workflow = defineWorkflow({
+      name: "step-event-workflow",
+      version: 1,
+      startAt: "build",
+      steps: {
+        build: taskStep({
+          kind: "task",
+          next: "done",
+          run: async ({ emit }) => {
+            await emit({
+              type: "progress",
+              data: {
+                pct: 0.5,
+              },
+            })
+
+            return {
+              patch: {
+                emitted: true,
+              },
+            }
+          },
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const events = await store.getRunEvents(run.id)
+    const emitted = events.find(
+      (event) => event.eventType === "step.emit:progress"
+    )
+
+    expect(emitted).toMatchObject({
+      runId: run.id,
+      stepKey: "build",
+      payload: {
+        type: "progress",
+        data: {
+          pct: 0.5,
+        },
+        stepKey: "build",
+        stepAttemptId: "attempt-1",
+      },
+    })
+  })
+
   it("completes after bounded retries and preserves the final patch", async () => {
     const attemptsByRun = new Map<string, number>()
     const workflow = defineWorkflow({
@@ -1930,6 +2082,12 @@ describe("workflow engine", () => {
                 ok: true,
               },
             })
+            await context.emit({
+              type: "audit",
+              data: {
+                saved: true,
+              },
+            })
             return {
               patch: {
                 saved: true,
@@ -1955,8 +2113,17 @@ describe("workflow engine", () => {
     await drainEngine(engine)
 
     const completed = await transactionalStore.getRun(run.id)
+    const events = await transactionalStore.getRunEvents(run.id)
+
     expect(completed?.status).toBe("completed")
     expect(completed?.context.saved).toBe(true)
+    expect(
+      events.some(
+        (event) =>
+          event.eventType === "step.emit:audit" &&
+          event.payload.stepAttemptId === "transactional-attempt"
+      )
+    ).toBe(true)
   })
 
   it("replaces workflow definitions while preserving pinned versions", async () => {

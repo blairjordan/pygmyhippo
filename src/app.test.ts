@@ -12,7 +12,7 @@ import { createRecordingTracer } from "./lib/tracing.test-helpers.js"
 import { createWorkflowEngine } from "./lib/workflow-engine.js"
 import { demoWorkflow } from "./workflows/demo.js"
 import { defineWorkflow, taskStep, endStep } from "./lib/workflow-definition.js"
-import type { JsonObject } from "./types/json.js"
+import type { JsonObject, JsonValue } from "./types/json.js"
 import type {
   WorkflowEventRecord,
   WorkflowRunRecord,
@@ -115,6 +115,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async extendLease() {
     return true
   },
+  async emitStepEvent() {
+    throw new Error("not used")
+  },
   async executeTransactionalTask() {
     throw new Error("not used")
   },
@@ -188,6 +191,15 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
       runId: null,
       stepKey: null,
       attemptId: null,
+    }
+  },
+  async recordExternalSessionEvent() {
+    return {
+      status: "missing" as const,
+      runId: null,
+      stepKey: null,
+      attemptId: null,
+      eventId: null,
     }
   },
   async recoverExpiredLeases() {
@@ -582,6 +594,92 @@ describe("app routes", () => {
     })
 
     await heartbeatApp.close()
+  })
+
+  it("records external session events by external id", async () => {
+    const capturedEvents: Array<{
+      externalSessionId: string
+      type: string
+      data: JsonValue
+    }> = []
+    const eventsStore = {
+      ...createStoreStub(),
+      async recordExternalSessionEvent(args: {
+        externalSessionId: string
+        type: string
+        data: JsonValue
+      }) {
+        capturedEvents.push(args)
+        return {
+          status: "recorded" as const,
+          runId: "run-1",
+          stepKey: "transcode",
+          attemptId: "attempt-1",
+          eventId: capturedEvents.length,
+        }
+      },
+    }
+    const eventsApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store: eventsStore,
+      }),
+      metrics: createMetrics(),
+      store: eventsStore,
+    })
+
+    const response = await eventsApp.inject({
+      method: "POST",
+      url: "/v1/external-sessions/job-123/events",
+      payload: {
+        events: [
+          {
+            type: "progress",
+            data: { pct: 0.75 },
+          },
+          {
+            type: "log-line",
+            data: "encoded frame 42",
+          },
+        ],
+      },
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({
+      outcome: "recorded",
+      count: 2,
+      events: [
+        {
+          runId: "run-1",
+          stepKey: "transcode",
+          attemptId: "attempt-1",
+          eventId: 1,
+        },
+        {
+          runId: "run-1",
+          stepKey: "transcode",
+          attemptId: "attempt-1",
+          eventId: 2,
+        },
+      ],
+    })
+    expect(capturedEvents).toEqual([
+      {
+        externalSessionId: "job-123",
+        type: "progress",
+        data: { pct: 0.75 },
+      },
+      {
+        externalSessionId: "job-123",
+        type: "log-line",
+        data: "encoded frame 42",
+      },
+    ])
+
+    await eventsApp.close()
   })
 
   it("requires an API token when configured", async () => {
