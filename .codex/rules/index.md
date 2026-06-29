@@ -6,6 +6,7 @@ Read this file on every task.
 
 - [`general.md`](./general.md) — repo-wide coding defaults and response conventions
 - [`typescript.md`](./typescript.md) — TypeScript/JavaScript engineering rules with examples
+- [`clean-architecture.md`](./clean-architecture.md) — guidelines on file sizes and separation of concerns
 
 ## Load When Relevant
 
