@@ -14,6 +14,7 @@ import { createWorkflowRoutes } from "./routes/workflows.js"
 export const createApp = (args: {
   auth: HippoAuth
   engine: WorkflowEngine
+  externalHeartbeatLeaseMs?: number
   listenForNotifications?: (
     onNotification: (notification: WorkflowNotification) => void
   ) => Promise<() => Promise<void>>
@@ -33,6 +34,7 @@ export const createApp = (args: {
     createWorkflowRoutes({
       auth: args.auth,
       engine: args.engine,
+      externalHeartbeatLeaseMs: args.externalHeartbeatLeaseMs ?? 15_000,
       metrics: args.metrics,
       store: args.store,
       tracer,

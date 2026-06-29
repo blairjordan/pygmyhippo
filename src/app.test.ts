@@ -182,6 +182,14 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
 
     return healthy
   },
+  async recordExternalHeartbeat() {
+    return {
+      status: "missing" as const,
+      runId: null,
+      stepKey: null,
+      attemptId: null,
+    }
+  },
   async recoverExpiredLeases() {
     return 0
   },
@@ -512,6 +520,68 @@ describe("app routes", () => {
     })
 
     await externalApp.close()
+  })
+
+  it("records an external session heartbeat by external id", async () => {
+    let capturedHeartbeat: {
+      externalSessionId: string
+      leaseMs: number
+      payload: JsonObject
+    } | null = null
+    const heartbeatStore = {
+      ...createStoreStub(),
+      async recordExternalHeartbeat(args: {
+        externalSessionId: string
+        leaseMs: number
+        payload: JsonObject
+      }) {
+        capturedHeartbeat = args
+        return {
+          status: "recorded" as const,
+          runId: "run-1",
+          stepKey: "transcode",
+          attemptId: "attempt-1",
+        }
+      },
+    }
+    const heartbeatApp = createApp({
+      auth: createAuth(),
+      engine: createWorkflowEngine({
+        definitions: [demoWorkflow],
+        metrics: createMetrics(),
+        store: heartbeatStore,
+      }),
+      externalHeartbeatLeaseMs: 30_000,
+      metrics: createMetrics(),
+      store: heartbeatStore,
+    })
+
+    const response = await heartbeatApp.inject({
+      method: "POST",
+      url: "/v1/external-sessions/job-123/heartbeat",
+      payload: {
+        progress: 0.5,
+        message: "halfway",
+      },
+    })
+
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({
+      outcome: "recorded",
+      runId: "run-1",
+      stepKey: "transcode",
+      attemptId: "attempt-1",
+    })
+    expect(capturedHeartbeat).toEqual({
+      externalSessionId: "job-123",
+      leaseMs: 30_000,
+      payload: {
+        progress: 0.5,
+        message: "halfway",
+      },
+    })
+
+    await heartbeatApp.close()
   })
 
   it("requires an API token when configured", async () => {

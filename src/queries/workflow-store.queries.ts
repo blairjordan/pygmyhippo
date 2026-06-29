@@ -267,6 +267,8 @@ export interface IGetRunAttemptsResult {
   contextBefore: Json;
   createdAt: Date;
   error: Json | null;
+  externalSessionId: string | null;
+  externalSessionKind: string | null;
   id: string;
   input: Json;
   kind: step_attempt_kind;
@@ -287,7 +289,7 @@ export interface IGetRunAttemptsQuery {
   result: IGetRunAttemptsResult;
 }
 
-const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":417,"b":422}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\nORDER BY step_seq ASC, attempt ASC, created_at ASC"};
+const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":513,"b":518}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\",\n  external_session_id AS \"externalSessionId\",\n  external_session_kind AS \"externalSessionKind\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\nORDER BY step_seq ASC, attempt ASC, created_at ASC"};
 
 /**
  * Query generated from SQL:
@@ -309,7 +311,9 @@ const getRunAttemptsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   trace_context AS "traceContext"
+ *   trace_context AS "traceContext",
+ *   external_session_id AS "externalSessionId",
+ *   external_session_kind AS "externalSessionKind"
  * FROM workflow_step_attempts
  * WHERE run_id = :runId
  * ORDER BY step_seq ASC, attempt ASC, created_at ASC
@@ -549,6 +553,8 @@ export interface IInsertStepAttemptResult {
   contextBefore: Json;
   createdAt: Date;
   error: Json | null;
+  externalSessionId: string | null;
+  externalSessionKind: string | null;
   id: string;
   input: Json;
   kind: step_attempt_kind;
@@ -569,7 +575,7 @@ export interface IInsertStepAttemptQuery {
   result: IInsertStepAttemptResult;
 }
 
-const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"kind":true,"stepSeq":true,"attempt":true,"contextBefore":true,"input":true,"traceContext":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":156,"b":161}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":166,"b":173}]},{"name":"kind","required":false,"transform":{"type":"scalar"},"locs":[{"a":178,"b":182}]},{"name":"stepSeq","required":false,"transform":{"type":"scalar"},"locs":[{"a":187,"b":194}]},{"name":"attempt","required":false,"transform":{"type":"scalar"},"locs":[{"a":199,"b":206}]},{"name":"contextBefore","required":false,"transform":{"type":"scalar"},"locs":[{"a":224,"b":237}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":242,"b":247}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":252,"b":264}]}],"statement":"INSERT INTO workflow_step_attempts (\n  run_id,\n  step_key,\n  kind,\n  step_seq,\n  attempt,\n  status,\n  context_before,\n  input,\n  trace_context\n) VALUES (\n  :runId,\n  :stepKey,\n  :kind,\n  :stepSeq,\n  :attempt,\n  'started',\n  :contextBefore,\n  :input,\n  :traceContext\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\""};
+const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"kind":true,"stepSeq":true,"attempt":true,"contextBefore":true,"input":true,"traceContext":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":156,"b":161}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":166,"b":173}]},{"name":"kind","required":false,"transform":{"type":"scalar"},"locs":[{"a":178,"b":182}]},{"name":"stepSeq","required":false,"transform":{"type":"scalar"},"locs":[{"a":187,"b":194}]},{"name":"attempt","required":false,"transform":{"type":"scalar"},"locs":[{"a":199,"b":206}]},{"name":"contextBefore","required":false,"transform":{"type":"scalar"},"locs":[{"a":224,"b":237}]},{"name":"input","required":false,"transform":{"type":"scalar"},"locs":[{"a":242,"b":247}]},{"name":"traceContext","required":false,"transform":{"type":"scalar"},"locs":[{"a":252,"b":264}]}],"statement":"INSERT INTO workflow_step_attempts (\n  run_id,\n  step_key,\n  kind,\n  step_seq,\n  attempt,\n  status,\n  context_before,\n  input,\n  trace_context\n) VALUES (\n  :runId,\n  :stepKey,\n  :kind,\n  :stepSeq,\n  :attempt,\n  'started',\n  :contextBefore,\n  :input,\n  :traceContext\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\",\n  external_session_id AS \"externalSessionId\",\n  external_session_kind AS \"externalSessionKind\""};
 
 /**
  * Query generated from SQL:
@@ -612,7 +618,9 @@ const insertStepAttemptIR: any = {"usedParamSet":{"runId":true,"stepKey":true,"k
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   trace_context AS "traceContext"
+ *   trace_context AS "traceContext",
+ *   external_session_id AS "externalSessionId",
+ *   external_session_kind AS "externalSessionKind"
  * ```
  */
 export const insertStepAttempt = new PreparedQuery<IInsertStepAttemptParams,IInsertStepAttemptResult>(insertStepAttemptIR);
@@ -631,6 +639,8 @@ export interface IGetStepAttemptByIdForRunResult {
   contextBefore: Json;
   createdAt: Date;
   error: Json | null;
+  externalSessionId: string | null;
+  externalSessionKind: string | null;
   id: string;
   input: Json;
   kind: step_attempt_kind;
@@ -651,7 +661,7 @@ export interface IGetStepAttemptByIdForRunQuery {
   result: IGetStepAttemptByIdForRunResult;
 }
 
-const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":417,"b":422}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":435,"b":444}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\n  AND id = :attemptId"};
+const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":513,"b":518}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":531,"b":540}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  kind,\n  step_seq AS \"stepSeq\",\n  attempt,\n  status,\n  context_before AS \"contextBefore\",\n  input,\n  output,\n  error,\n  started_at AS \"startedAt\",\n  last_heartbeat_at AS \"lastHeartbeatAt\",\n  completed_at AS \"completedAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  trace_context AS \"traceContext\",\n  external_session_id AS \"externalSessionId\",\n  external_session_kind AS \"externalSessionKind\"\nFROM workflow_step_attempts\nWHERE run_id = :runId\n  AND id = :attemptId"};
 
 /**
  * Query generated from SQL:
@@ -673,7 +683,9 @@ const getStepAttemptByIdForRunIR: any = {"usedParamSet":{"runId":true,"attemptId
  *   completed_at AS "completedAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   trace_context AS "traceContext"
+ *   trace_context AS "traceContext",
+ *   external_session_id AS "externalSessionId",
+ *   external_session_kind AS "externalSessionKind"
  * FROM workflow_step_attempts
  * WHERE run_id = :runId
  *   AND id = :attemptId
@@ -1339,6 +1351,8 @@ export interface IOpenWaitParams {
   eventPayload?: Json | null | void;
   eventType?: string | null | void;
   expiresAt?: DateOrString | null | void;
+  externalSessionId?: string | null | void;
+  externalSessionKind?: string | null | void;
   output?: Json | null | void;
   payload?: Json | null | void;
   runId?: string | null | void;
@@ -1380,7 +1394,7 @@ export interface IOpenWaitQuery {
   result: IOpenWaitResult;
 }
 
-const openWaitIR: any = {"usedParamSet":{"stepKey":true,"context":true,"runId":true,"workerId":true,"correlationKey":true,"payload":true,"expiresAt":true,"output":true,"attemptId":true,"eventType":true,"eventPayload":true},"params":[{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":105},{"a":318,"b":325},{"a":1356,"b":1363},{"a":1800,"b":1807}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":122,"b":129}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":284,"b":289}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":349,"b":357}]},{"name":"correlationKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1366,"b":1380}]},{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":1391,"b":1398}]},{"name":"expiresAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":1401,"b":1410}]},{"name":"output","required":false,"transform":{"type":"scalar"},"locs":[{"a":1532,"b":1538}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1621,"b":1630}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":1810,"b":1819}]},{"name":"eventPayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":1822,"b":1834}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'waiting',\n    current_step_key = :stepKey,\n    context = :context,\n    result = NULL,\n    error = NULL,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), inserted_wait AS (\n  INSERT INTO workflow_waits (\n    run_id,\n    step_key,\n    correlation_key,\n    status,\n    payload,\n    expires_at\n  )\n  SELECT id, :stepKey, :correlationKey, 'open', :payload, :expiresAt\n  FROM updated_run\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'completed',\n    output = :output,\n    error = NULL,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :attemptId\n    AND run_id IN (SELECT id FROM updated_run)\n  RETURNING id\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, :eventType, :eventPayload\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+const openWaitIR: any = {"usedParamSet":{"stepKey":true,"context":true,"runId":true,"workerId":true,"correlationKey":true,"payload":true,"expiresAt":true,"externalSessionId":true,"externalSessionKind":true,"output":true,"attemptId":true,"eventType":true,"eventPayload":true},"params":[{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":105},{"a":318,"b":325},{"a":1416,"b":1423},{"a":2022,"b":2029}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":122,"b":129}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":284,"b":289}]},{"name":"workerId","required":false,"transform":{"type":"scalar"},"locs":[{"a":349,"b":357}]},{"name":"correlationKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1430,"b":1444}]},{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":1463,"b":1470}]},{"name":"expiresAt","required":false,"transform":{"type":"scalar"},"locs":[{"a":1477,"b":1486}]},{"name":"externalSessionId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1493,"b":1510},{"a":1711,"b":1728}]},{"name":"externalSessionKind","required":false,"transform":{"type":"scalar"},"locs":[{"a":1517,"b":1536},{"a":1759,"b":1778}]},{"name":"output","required":false,"transform":{"type":"scalar"},"locs":[{"a":1658,"b":1664}]},{"name":"attemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1843,"b":1852}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":2032,"b":2041}]},{"name":"eventPayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":2044,"b":2056}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'waiting',\n    current_step_key = :stepKey,\n    context = :context,\n    result = NULL,\n    error = NULL,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id = :runId\n    AND current_step_key = :stepKey\n    AND lease_owner = :workerId\n    AND lease_expires_at >= now()\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), inserted_wait AS (\n  INSERT INTO workflow_waits (\n    run_id,\n    step_key,\n    correlation_key,\n    status,\n    payload,\n    expires_at,\n    external_session_id,\n    external_session_kind\n  )\n  SELECT\n    id,\n    :stepKey,\n    :correlationKey,\n    'open',\n    :payload,\n    :expiresAt,\n    :externalSessionId,\n    :externalSessionKind\n  FROM updated_run\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'completed',\n    output = :output,\n    error = NULL,\n    external_session_id = :externalSessionId,\n    external_session_kind = :externalSessionKind,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :attemptId\n    AND run_id IN (SELECT id FROM updated_run)\n  RETURNING id\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, :eventType, :eventPayload\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
 
 /**
  * Query generated from SQL:
@@ -1433,9 +1447,19 @@ const openWaitIR: any = {"usedParamSet":{"stepKey":true,"context":true,"runId":t
  *     correlation_key,
  *     status,
  *     payload,
- *     expires_at
+ *     expires_at,
+ *     external_session_id,
+ *     external_session_kind
  *   )
- *   SELECT id, :stepKey, :correlationKey, 'open', :payload, :expiresAt
+ *   SELECT
+ *     id,
+ *     :stepKey,
+ *     :correlationKey,
+ *     'open',
+ *     :payload,
+ *     :expiresAt,
+ *     :externalSessionId,
+ *     :externalSessionKind
  *   FROM updated_run
  * ), updated_attempt AS (
  *   UPDATE workflow_step_attempts
@@ -1443,6 +1467,8 @@ const openWaitIR: any = {"usedParamSet":{"stepKey":true,"context":true,"runId":t
  *     status = 'completed',
  *     output = :output,
  *     error = NULL,
+ *     external_session_id = :externalSessionId,
+ *     external_session_kind = :externalSessionKind,
  *     completed_at = now(),
  *     updated_at = now()
  *   WHERE id = :attemptId
@@ -1792,6 +1818,8 @@ export interface IGetOpenWaitForUpdateResult {
   correlationKey: string;
   createdAt: Date;
   expiresAt: Date | null;
+  externalSessionId: string | null;
+  externalSessionKind: string | null;
   id: string;
   payload: Json | null;
   resumedAt: Date | null;
@@ -1809,7 +1837,7 @@ export interface IGetOpenWaitForUpdateQuery {
   result: IGetOpenWaitForUpdateResult;
 }
 
-const getOpenWaitForUpdateIR: any = {"usedParamSet":{"correlationKey":true},"params":[{"name":"correlationKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":350,"b":364}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  correlation_key AS \"correlationKey\",\n  status,\n  payload,\n  resume_payload AS \"resumePayload\",\n  resume_output AS \"resumeOutput\",\n  expires_at AS \"expiresAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  resumed_at AS \"resumedAt\"\nFROM workflow_waits\nWHERE correlation_key = :correlationKey\nFOR UPDATE"};
+const getOpenWaitForUpdateIR: any = {"usedParamSet":{"correlationKey":true},"params":[{"name":"correlationKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":446,"b":460}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  correlation_key AS \"correlationKey\",\n  status,\n  payload,\n  resume_payload AS \"resumePayload\",\n  resume_output AS \"resumeOutput\",\n  expires_at AS \"expiresAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  resumed_at AS \"resumedAt\",\n  external_session_id AS \"externalSessionId\",\n  external_session_kind AS \"externalSessionKind\"\nFROM workflow_waits\nWHERE correlation_key = :correlationKey\nFOR UPDATE"};
 
 /**
  * Query generated from SQL:
@@ -1826,7 +1854,9 @@ const getOpenWaitForUpdateIR: any = {"usedParamSet":{"correlationKey":true},"par
  *   expires_at AS "expiresAt",
  *   created_at AS "createdAt",
  *   updated_at AS "updatedAt",
- *   resumed_at AS "resumedAt"
+ *   resumed_at AS "resumedAt",
+ *   external_session_id AS "externalSessionId",
+ *   external_session_kind AS "externalSessionKind"
  * FROM workflow_waits
  * WHERE correlation_key = :correlationKey
  * FOR UPDATE
@@ -1965,7 +1995,7 @@ export interface ICompleteWaitResumeQuery {
   result: ICompleteWaitResumeResult;
 }
 
-const completeWaitResumeIR: any = {"usedParamSet":{"resumePayload":true,"output":true,"waitId":true,"nextStepKey":true,"context":true,"runId":true,"stepKey":true,"eventType":true,"eventPayload":true},"params":[{"name":"resumePayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":111}]},{"name":"output","required":false,"transform":{"type":"scalar"},"locs":[{"a":134,"b":140}]},{"name":"waitId","required":false,"transform":{"type":"scalar"},"locs":[{"a":203,"b":209}]},{"name":"nextStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":345,"b":356}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":373,"b":380}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":463,"b":468}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":524,"b":531},{"a":1489,"b":1496}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":1499,"b":1508}]},{"name":"eventPayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":1511,"b":1523}]}],"statement":"WITH updated_wait AS (\n  UPDATE workflow_waits\n  SET\n    status = 'resumed',\n    resume_payload = :resumePayload,\n    resume_output = :output,\n    resumed_at = now(),\n    updated_at = now()\n  WHERE id = :waitId\n    AND status = 'open'\n  RETURNING id\n), updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'queued',\n    current_step_key = :nextStepKey,\n    context = :context,\n    error = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id = :runId\n    AND status = 'waiting'\n    AND current_step_key = :stepKey\n    AND EXISTS (SELECT 1 FROM updated_wait)\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, :eventType, :eventPayload\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+const completeWaitResumeIR: any = {"usedParamSet":{"resumePayload":true,"output":true,"waitId":true,"nextStepKey":true,"context":true,"runId":true,"stepKey":true,"eventType":true,"eventPayload":true},"params":[{"name":"resumePayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":98,"b":111}]},{"name":"output","required":false,"transform":{"type":"scalar"},"locs":[{"a":134,"b":140}]},{"name":"waitId","required":false,"transform":{"type":"scalar"},"locs":[{"a":203,"b":209}]},{"name":"nextStepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":345,"b":356}]},{"name":"context","required":false,"transform":{"type":"scalar"},"locs":[{"a":373,"b":380}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":516,"b":521}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":577,"b":584},{"a":1542,"b":1549}]},{"name":"eventType","required":false,"transform":{"type":"scalar"},"locs":[{"a":1552,"b":1561}]},{"name":"eventPayload","required":false,"transform":{"type":"scalar"},"locs":[{"a":1564,"b":1576}]}],"statement":"WITH updated_wait AS (\n  UPDATE workflow_waits\n  SET\n    status = 'resumed',\n    resume_payload = :resumePayload,\n    resume_output = :output,\n    resumed_at = now(),\n    updated_at = now()\n  WHERE id = :waitId\n    AND status = 'open'\n  RETURNING id\n), updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'queued',\n    current_step_key = :nextStepKey,\n    context = :context,\n    error = NULL,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now()\n  WHERE id = :runId\n    AND status = 'waiting'\n    AND current_step_key = :stepKey\n    AND EXISTS (SELECT 1 FROM updated_wait)\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\"\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, :eventType, :eventPayload\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
 
 /**
  * Query generated from SQL:
@@ -1988,6 +2018,8 @@ const completeWaitResumeIR: any = {"usedParamSet":{"resumePayload":true,"output"
  *     current_step_key = :nextStepKey,
  *     context = :context,
  *     error = NULL,
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
  *     available_at = now(),
  *     updated_at = now()
  *   WHERE id = :runId
@@ -2078,6 +2110,81 @@ const extendLeaseIR: any = {"usedParamSet":{"leaseMs":true,"runId":true,"stepKey
  * ```
  */
 export const extendLease = new PreparedQuery<IExtendLeaseParams,IExtendLeaseResult>(extendLeaseIR);
+
+
+/** 'RecordExternalHeartbeat' parameters type */
+export interface IRecordExternalHeartbeatParams {
+  externalSessionId?: string | null | void;
+  leaseMs?: number | null | void;
+  payload?: Json | null | void;
+}
+
+/** 'RecordExternalHeartbeat' return type */
+export interface IRecordExternalHeartbeatResult {
+  attemptId: string | null;
+  runId: string | null;
+  status: string | null;
+  stepKey: string | null;
+}
+
+/** 'RecordExternalHeartbeat' query type */
+export interface IRecordExternalHeartbeatQuery {
+  params: IRecordExternalHeartbeatParams;
+  result: IRecordExternalHeartbeatResult;
+}
+
+const recordExternalHeartbeatIR: any = {"usedParamSet":{"externalSessionId":true,"leaseMs":true,"payload":true},"params":[{"name":"externalSessionId","required":false,"transform":{"type":"scalar"},"locs":[{"a":116,"b":133},{"a":751,"b":768}]},{"name":"leaseMs","required":false,"transform":{"type":"scalar"},"locs":[{"a":290,"b":297}]},{"name":"payload","required":false,"transform":{"type":"scalar"},"locs":[{"a":954,"b":961}]}],"statement":"WITH locked_wait AS (\n  SELECT\n    id,\n    run_id,\n    step_key\n  FROM workflow_waits\n  WHERE external_session_id = :externalSessionId\n    AND status = 'open'\n  ORDER BY created_at DESC\n  LIMIT 1\n  FOR UPDATE\n), updated_run AS (\n  UPDATE workflow_runs\n  SET\n    lease_expires_at = now() + (:leaseMs * interval '1 millisecond'),\n    updated_at = now()\n  WHERE id IN (SELECT run_id FROM locked_wait)\n    AND status = 'waiting'\n    AND current_step_key IN (SELECT step_key FROM locked_wait)\n  RETURNING id\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    last_heartbeat_at = now(),\n    updated_at = now()\n  WHERE run_id IN (SELECT id FROM updated_run)\n    AND step_key IN (SELECT step_key FROM locked_wait)\n    AND external_session_id = :externalSessionId\n  RETURNING id\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, (SELECT step_key FROM locked_wait), 'step.external_heartbeat', :payload\n  FROM updated_run\n  WHERE EXISTS (SELECT 1 FROM updated_attempt)\n)\nSELECT\n  CASE\n    WHEN NOT EXISTS (SELECT 1 FROM locked_wait) THEN 'missing'\n    WHEN NOT EXISTS (SELECT 1 FROM updated_attempt) THEN 'stale'\n    ELSE 'recorded'\n  END AS status,\n  (SELECT id FROM updated_run) AS \"runId\",\n  (SELECT step_key FROM locked_wait) AS \"stepKey\",\n  (SELECT id FROM updated_attempt) AS \"attemptId\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH locked_wait AS (
+ *   SELECT
+ *     id,
+ *     run_id,
+ *     step_key
+ *   FROM workflow_waits
+ *   WHERE external_session_id = :externalSessionId
+ *     AND status = 'open'
+ *   ORDER BY created_at DESC
+ *   LIMIT 1
+ *   FOR UPDATE
+ * ), updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     lease_expires_at = now() + (:leaseMs * interval '1 millisecond'),
+ *     updated_at = now()
+ *   WHERE id IN (SELECT run_id FROM locked_wait)
+ *     AND status = 'waiting'
+ *     AND current_step_key IN (SELECT step_key FROM locked_wait)
+ *   RETURNING id
+ * ), updated_attempt AS (
+ *   UPDATE workflow_step_attempts
+ *   SET
+ *     last_heartbeat_at = now(),
+ *     updated_at = now()
+ *   WHERE run_id IN (SELECT id FROM updated_run)
+ *     AND step_key IN (SELECT step_key FROM locked_wait)
+ *     AND external_session_id = :externalSessionId
+ *   RETURNING id
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, (SELECT step_key FROM locked_wait), 'step.external_heartbeat', :payload
+ *   FROM updated_run
+ *   WHERE EXISTS (SELECT 1 FROM updated_attempt)
+ * )
+ * SELECT
+ *   CASE
+ *     WHEN NOT EXISTS (SELECT 1 FROM locked_wait) THEN 'missing'
+ *     WHEN NOT EXISTS (SELECT 1 FROM updated_attempt) THEN 'stale'
+ *     ELSE 'recorded'
+ *   END AS status,
+ *   (SELECT id FROM updated_run) AS "runId",
+ *   (SELECT step_key FROM locked_wait) AS "stepKey",
+ *   (SELECT id FROM updated_attempt) AS "attemptId"
+ * ```
+ */
+export const recordExternalHeartbeat = new PreparedQuery<IRecordExternalHeartbeatParams,IRecordExternalHeartbeatResult>(recordExternalHeartbeatIR);
 
 
 /** 'CountOpenWaits' parameters type */

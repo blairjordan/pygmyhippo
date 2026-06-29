@@ -52,6 +52,7 @@ import {
   openWait as openWaitQuery,
   ping as pingQuery,
   recoverExpiredLeases as recoverExpiredLeasesQuery,
+  recordExternalHeartbeat as recordExternalHeartbeatQuery,
   requestCancelRun as requestCancelRunQuery,
   rescheduleAfterFire as rescheduleAfterFireQuery,
   retryTransactionalTask as retryTransactionalTaskQuery,
@@ -852,45 +853,20 @@ export const createWorkflowStore = (
         }),
       },
       async () => {
-        const run = await withTransaction(db, async (client) => {
-          const [row] = await openWaitQuery.run(
-            {
-              ...args,
-              eventType: "wait.opened",
-              eventPayload: { correlationKey: args.correlationKey },
-            },
-            client
-          )
+        const [row] = await openWaitQuery.run(
+          {
+            ...args,
+            eventType: "wait.opened",
+            eventPayload: { correlationKey: args.correlationKey },
+          },
+          db
+        )
 
-          if (!row) {
-            throw new LostLeaseError("Failed to open wait under active lease")
-          }
+        if (!row) {
+          throw new LostLeaseError("Failed to open wait under active lease")
+        }
 
-          if (
-            args.externalSessionId !== undefined ||
-            args.externalSessionKind !== undefined
-          ) {
-            await client.query(
-              `
-                UPDATE workflow_waits
-                SET
-                  external_session_id = $1,
-                  external_session_kind = $2,
-                  updated_at = now()
-                WHERE run_id = $3
-                  AND correlation_key = $4
-              `,
-              [
-                args.externalSessionId ?? null,
-                args.externalSessionKind ?? null,
-                args.runId,
-                args.correlationKey,
-              ]
-            )
-          }
-
-          return mapRun(row)
-        })
+        const run = mapRun(row)
         await notifyRunEvent(run.id)
         return run
       }
@@ -1302,6 +1278,41 @@ export const createWorkflowStore = (
     const [row] = await extendLeaseQuery.run(args, db)
     return requireRow(row, "Failed to extend lease").ok === 1
   }
+
+  const recordExternalHeartbeat = async (args: {
+    externalSessionId: string
+    leaseMs: number
+    payload: JsonObject
+  }) =>
+    withStoreSpan(
+      {
+        name: "record_external_heartbeat",
+        attributes: {
+          "hippo.operation": "store.record_external_heartbeat",
+          "workflow.external_session.id": args.externalSessionId,
+        },
+      },
+      async () => {
+        const [row] = await recordExternalHeartbeatQuery.run(args, db)
+        const result = requireRow(row, "Failed to record external heartbeat")
+
+        if (result.runId) {
+          await notifyRunEvent(result.runId)
+        }
+
+        return {
+          status:
+            result.status === "recorded" ||
+            result.status === "missing" ||
+            result.status === "stale"
+              ? result.status
+              : "stale",
+          runId: result.runId,
+          stepKey: result.stepKey,
+          attemptId: result.attemptId,
+        }
+      }
+    )
 
   const expireOpenWaits = async (args: { limit: number }) => {
     return withStoreSpan(
@@ -2341,6 +2352,7 @@ export const createWorkflowStore = (
     markOutboxDelivered,
     markRunCompensationFailed,
     queryStepDatabase,
+    recordExternalHeartbeat,
     recoverExpiredLeases,
     requestCancelRun,
     resumeExternalSession,

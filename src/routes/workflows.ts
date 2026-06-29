@@ -68,6 +68,18 @@ const resumeBodySchema = z.object({
   payload: jsonValueSchema.optional(),
 })
 
+const externalHeartbeatBodySchema = z.object({
+  progress: z.number().min(0).max(1).optional(),
+  message: z.string().min(1).max(1_000).optional(),
+  usage: z
+    .object({
+      resource: z.string().min(1),
+      amount: z.number(),
+      costUsd: z.number().optional(),
+    })
+    .optional(),
+})
+
 const operatorListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
 })
@@ -337,6 +349,7 @@ const createRouteTraceAttributes = (args: {
 export const createWorkflowRoutes = (args: {
   auth: HippoAuth
   engine: WorkflowEngine
+  externalHeartbeatLeaseMs: number
   listenForNotifications?: (
     onNotification: (notification: WorkflowNotification) => void
   ) => Promise<() => Promise<void>>
@@ -1443,6 +1456,67 @@ export const createWorkflowRoutes = (args: {
           runId: run.run?.id ?? null,
           status: run.run?.status ?? null,
           currentStepKey: run.run?.currentStepKey ?? null,
+        }
+      }
+    )
+  })
+
+  app.post("/v1/external-sessions/:externalId/heartbeat", async (request, reply) => {
+    return traceRequest(
+      args.tracer,
+      {
+        name: "hippo.http.external_session_heartbeat",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.external_session_heartbeat",
+          route: "/v1/external-sessions/:externalId/heartbeat",
+        }),
+      },
+      async () => {
+        const rawBody = (request.body ?? {}) as JsonValue
+        requireCallbackAuth(app, request, rawBody, args.auth)
+
+        const params = externalSessionParamsSchema.parse(request.params)
+        const body = externalHeartbeatBodySchema.parse(request.body ?? {})
+        const usage =
+          body.usage === undefined
+            ? undefined
+            : {
+                resource: body.usage.resource,
+                amount: body.usage.amount,
+                ...(body.usage.costUsd === undefined
+                  ? {}
+                  : { costUsd: body.usage.costUsd }),
+              }
+        const payload: JsonObject = {
+          ...(body.progress === undefined ? {} : { progress: body.progress }),
+          ...(body.message === undefined ? {} : { message: body.message }),
+          ...(usage === undefined ? {} : { usage }),
+        }
+        const heartbeat = await args.store.recordExternalHeartbeat({
+          externalSessionId: params.externalId,
+          leaseMs: args.externalHeartbeatLeaseMs,
+          payload,
+        })
+
+        if (heartbeat.status === "missing") {
+          throw app.httpErrors.notFound(
+            `Open external session "${params.externalId}" not found`
+          )
+        }
+
+        if (heartbeat.status === "stale") {
+          throw app.httpErrors.conflict(
+            `External session "${params.externalId}" is not heartbeatable`
+          )
+        }
+
+        reply.code(202)
+        return {
+          outcome: heartbeat.status,
+          runId: heartbeat.runId,
+          stepKey: heartbeat.stepKey,
+          attemptId: heartbeat.attemptId,
         }
       }
     )

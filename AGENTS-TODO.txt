@@ -39,22 +39,27 @@ Commits so far on this branch (oldest first):
            - In-memory engine + app route tests for external session resume
            - examples/workflows-demo: video-transcode example
            - branch history scrubbed for named out-of-tree references
+  4341d6d  test(external-session): cover postgres callback resume
+           - Postgres-backed integration test for external session wait
+             persistence, metadata, callback resume, and run completion
 
 Open work-in-flight on this branch (next commits):
-  - External heartbeat protocol (Tier 1.2)
+  - Step event streaming (Tier 1.3)
 
-Uncommitted working tree since 802f01e:
-  - Postgres-backed integration test for external session wait
-    persistence and resume
+Uncommitted working tree since 4341d6d:
+  - POST /v1/external-sessions/:externalId/heartbeat route
+  - store.recordExternalHeartbeat generated SQL mutation
+  - external session metadata persisted onto step attempts via openWait
+  - wait resume clears lease metadata set by external heartbeats
+  - App/runtime config threads HIPPO_LEASE_MS to heartbeat grace
+  - Route + Postgres integration coverage for heartbeat side effects
   - npm run typecheck clean
-  - npm run test clean
   - HIPPO_PG_TEST_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres
     npm run test:pg clean
+  - npm run test -- src/app.test.ts src/lib/workflow-engine.test.ts clean
 
-PR 1 (externalSession MVP) is mergeable to main once the current
-Postgres-backed integration test commit lands. After merge this
-branch can either be rebased forward for PR 2 (heartbeat callback) or
-PR 2 can branch off a fresh main — see "PR cadence" below.
+PR 1 (externalSession MVP) is mergeable to main. PR 2 (heartbeat
+callback) is in progress on this branch — see "PR cadence" below.
 
 Why this work exists
 --------------------
@@ -149,7 +154,7 @@ Tier 1 — Required for credible "long-running external session" story
     transcode_id; poll() returns status; attach() resumes polling
     after worker recovery.
 
-[ ] 2. External heartbeat protocol
+[x] 2. External heartbeat protocol
     Generic problem: step is alive but waiting on an external system;
     lease shouldn't expire just because we haven't ticked locally.
 

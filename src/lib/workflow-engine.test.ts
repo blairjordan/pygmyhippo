@@ -624,6 +624,14 @@ const createStoreStub = () => {
     async ping() {
       return true
     },
+    async recordExternalHeartbeat() {
+      return {
+        status: "missing" as const,
+        runId: null,
+        stepKey: null,
+        attemptId: null,
+      }
+    },
     async resumeWait(args: {
       correlationKey: string
       resume: (

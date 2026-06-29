@@ -71,6 +71,7 @@ const main = async () => {
   const app = createApp({
     auth,
     engine,
+    externalHeartbeatLeaseMs: config.HIPPO_LEASE_MS,
     listenForNotifications: notifier.listen,
     metrics,
     store,

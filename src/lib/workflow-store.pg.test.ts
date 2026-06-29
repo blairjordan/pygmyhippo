@@ -489,6 +489,39 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration", () => {
     expect(waitRows.rows[0]?.external_session_kind).toBe("video-transcode")
     expect(waitRows.rows[0]?.payload).toEqual({ status: "submitted" })
 
+    const heartbeat = await store.recordExternalHeartbeat({
+      externalSessionId: "pg-transcode-123",
+      leaseMs: 30_000,
+      payload: {
+        progress: 0.5,
+        message: "encoding",
+      },
+    })
+    const heartbeatRun = await store.getRun(run.id)
+    const heartbeatAttempts = await store.getRunAttempts(run.id)
+    const heartbeatEvents = await store.getRunEvents(run.id)
+    const submitAttempt = heartbeatAttempts.find(
+      (attempt) => attempt.stepKey === "submit"
+    )
+
+    expect(heartbeat).toMatchObject({
+      status: "recorded",
+      runId: run.id,
+      stepKey: "submit",
+    })
+    expect(heartbeatRun?.leaseExpiresAt?.getTime()).toBeGreaterThan(Date.now())
+    expect(submitAttempt?.externalSessionId).toBe("pg-transcode-123")
+    expect(submitAttempt?.externalSessionKind).toBe("video-transcode")
+    expect(submitAttempt?.lastHeartbeatAt).toBeInstanceOf(Date)
+    expect(
+      heartbeatEvents.some(
+        (event) =>
+          event.eventType === "step.external_heartbeat" &&
+          event.payload.progress === 0.5 &&
+          event.payload.message === "encoding"
+      )
+    ).toBe(true)
+
     const resumed = await engine.resumeExternalSession({
       externalSessionId: "pg-transcode-123",
       payload: {
