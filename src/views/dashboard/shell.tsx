@@ -198,6 +198,7 @@ export const renderShellDocument = (args: {
             const isTarget = pane.id === "pane-" + tabId
             pane.classList.toggle("hidden", !isTarget)
           })
+          document.querySelectorAll(".mermaidTooltip").forEach(el => el.remove())
         })
 
         document.addEventListener("keydown", (event) => {
