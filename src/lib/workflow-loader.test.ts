@@ -64,6 +64,9 @@ describe("workflow loader", () => {
     const stop = await startWorkflowDevReloader({
       debounceMs: 5,
       engine: {
+        async cancelExternalSessionsForRun() {
+          return { attempted: 0 }
+        },
         getWorkflow() {
           throw new Error("not used")
         },

@@ -1629,7 +1629,88 @@ export const createWorkflowEngine = (args: {
       }
     )
 
+  const cancelExternalSessionsForRun = async (runId: string) => {
+    const run = await args.store.getRun(runId)
+
+    if (!run) {
+      return { attempted: 0 }
+    }
+
+    const waits = await args.store.listOpenExternalSessions(runId)
+    const definition = requireDefinition(
+      definitions,
+      run.definitionName,
+      run.definitionVersion
+    )
+    let attempted = 0
+
+    for (const wait of waits) {
+      if (!wait.externalSessionId) {
+        continue
+      }
+
+      const step = getStep(definition, wait.stepKey)
+
+      if (step.kind !== "externalSession" || !step.cancel) {
+        continue
+      }
+
+      attempted += 1
+
+      try {
+        await withTimeout(
+          Promise.resolve(
+            step.cancel(
+              createExecutionContext({
+                run,
+                attempt: 0,
+                stepKey: wait.stepKey,
+                heartbeat: async () => false,
+                emit: noopEmit,
+                recordUsage: async (usage) => {
+                  await args.store.recordUsage({
+                    runId: run.id,
+                    stepKey: wait.stepKey,
+                    stepAttemptId: null,
+                    usage,
+                    ...(definition.budget === undefined
+                      ? {}
+                      : { budget: definition.budget }),
+                  })
+                },
+                db: {
+                  query: args.store.queryStepDatabase,
+                },
+                outbox: {
+                  enqueue: async (outboxInput) => {
+                    await args.store.enqueueOutbox({
+                      runId: run.id,
+                      topic: outboxInput.topic,
+                      payload: outboxInput.payload,
+                      ...(outboxInput.availableAt === undefined
+                        ? {}
+                        : { availableAt: outboxInput.availableAt }),
+                    })
+                  },
+                },
+                transactional: false,
+              }),
+              wait.externalSessionId
+            )
+          ),
+          step.timeoutMs,
+          `External session cancel "${wait.stepKey}" in workflow "${definition.name}"`
+        )
+      } catch {
+        continue
+      }
+    }
+
+    return { attempted }
+  }
+
   return {
+    cancelExternalSessionsForRun,
     getWorkflow: (workflowName: string, version?: number) =>
       requireDefinition(definitions, workflowName, version),
     hasWorkflow: (workflowName: string, version?: number) =>

@@ -44,6 +44,9 @@ describe("scheduler", () => {
       completedAt: null,
     }))
     const engine = {
+      async cancelExternalSessionsForRun() {
+        return { attempted: 0 }
+      },
       getWorkflow() {
         throw new Error("not used")
       },

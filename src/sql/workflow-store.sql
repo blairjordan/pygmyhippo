@@ -999,6 +999,28 @@ SELECT
   (SELECT step_key FROM locked_wait) AS "stepKey",
   (SELECT id FROM updated_attempt) AS "attemptId";
 
+/* @name ListOpenExternalSessions */
+SELECT
+  id,
+  run_id AS "runId",
+  step_key AS "stepKey",
+  correlation_key AS "correlationKey",
+  status,
+  payload,
+  resume_payload AS "resumePayload",
+  resume_output AS "resumeOutput",
+  expires_at AS "expiresAt",
+  created_at AS "createdAt",
+  updated_at AS "updatedAt",
+  resumed_at AS "resumedAt",
+  external_session_id AS "externalSessionId",
+  external_session_kind AS "externalSessionKind"
+FROM workflow_waits
+WHERE run_id = :runId
+  AND status = 'open'
+  AND external_session_id IS NOT NULL
+ORDER BY created_at ASC;
+
 /* @name RecordExternalSessionEvent */
 WITH locked_wait AS (
   SELECT

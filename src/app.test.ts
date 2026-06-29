@@ -157,6 +157,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async listFailedRuns() {
     return []
   },
+  async listOpenExternalSessions() {
+    return []
+  },
   async listRunLineage(runId: string) {
     return [createRunRecord({ id: runId })]
   },
@@ -1067,6 +1070,9 @@ describe("app routes", () => {
       })
     )
     const engine = {
+      async cancelExternalSessionsForRun() {
+        return { attempted: 0 }
+      },
       getWorkflow() {
         throw new Error("not used")
       },

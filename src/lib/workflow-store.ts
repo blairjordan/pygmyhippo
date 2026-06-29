@@ -46,6 +46,7 @@ import {
   listActiveRuns as listActiveRunsQuery,
   listChildRuns as listChildRunsQuery,
   listFailedRuns as listFailedRunsQuery,
+  listOpenExternalSessions as listOpenExternalSessionsQuery,
   listRunLineage as listRunLineageQuery,
   listRuns as listRunsQuery,
   listSchedules as listSchedulesQuery,
@@ -1609,6 +1610,21 @@ export const createWorkflowStore = (
       }
     )
 
+  const listOpenExternalSessions = async (runId: string) =>
+    withStoreSpan(
+      {
+        name: "list_open_external_sessions",
+        attributes: createTraceAttributes({
+          operation: "store.list_open_external_sessions",
+          runId,
+        }),
+      },
+      async () => {
+        const rows = await listOpenExternalSessionsQuery.run({ runId }, db)
+        return rows.map(mapWait)
+      }
+    )
+
   const recordExternalSessionEvent = async (args: {
     externalSessionId: string
     type: string
@@ -2797,6 +2813,7 @@ export const createWorkflowStore = (
     listActiveRuns,
     listFailedRuns,
     listRunLineage,
+    listOpenExternalSessions,
     listRuns,
     listRunsPaginated,
     listSchedules,

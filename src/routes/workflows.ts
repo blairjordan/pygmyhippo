@@ -811,6 +811,10 @@ export const createWorkflowRoutes = (args: {
           )
         }
 
+        if (body.mode === "hard") {
+          await args.engine.cancelExternalSessionsForRun(existingRun.id)
+        }
+
         const run = await args.store.requestCancelRun({
           runId: params.runId,
           mode: body.mode,
@@ -869,6 +873,8 @@ export const createWorkflowRoutes = (args: {
             reason: z.string().min(1).max(1_000).optional(),
           })
           .parse(request.body ?? {})
+
+        await args.engine.cancelExternalSessionsForRun(params.runId)
 
         const run = await args.store.requestCancelRun({
           runId: params.runId,

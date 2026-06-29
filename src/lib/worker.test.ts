@@ -13,6 +13,9 @@ describe("worker loop", () => {
         }).then(() => null)
     )
     const engine = {
+      async cancelExternalSessionsForRun() {
+        return { attempted: 0 }
+      },
       getWorkflow() {
         throw new Error("not used")
       },
@@ -64,6 +67,9 @@ describe("worker loop", () => {
     const tick = vi.fn(async () => null)
     let onWake: (() => void) | undefined
     const engine = {
+      async cancelExternalSessionsForRun() {
+        return { attempted: 0 }
+      },
       getWorkflow() {
         throw new Error("not used")
       },

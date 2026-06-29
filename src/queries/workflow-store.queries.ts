@@ -2187,6 +2187,65 @@ const recordExternalHeartbeatIR: any = {"usedParamSet":{"externalSessionId":true
 export const recordExternalHeartbeat = new PreparedQuery<IRecordExternalHeartbeatParams,IRecordExternalHeartbeatResult>(recordExternalHeartbeatIR);
 
 
+/** 'ListOpenExternalSessions' parameters type */
+export interface IListOpenExternalSessionsParams {
+  runId?: string | null | void;
+}
+
+/** 'ListOpenExternalSessions' return type */
+export interface IListOpenExternalSessionsResult {
+  correlationKey: string;
+  createdAt: Date;
+  expiresAt: Date | null;
+  externalSessionId: string | null;
+  externalSessionKind: string | null;
+  id: string;
+  payload: Json | null;
+  resumedAt: Date | null;
+  resumeOutput: Json | null;
+  resumePayload: Json | null;
+  runId: string;
+  status: workflow_wait_status;
+  stepKey: string;
+  updatedAt: Date;
+}
+
+/** 'ListOpenExternalSessions' query type */
+export interface IListOpenExternalSessionsQuery {
+  params: IListOpenExternalSessionsParams;
+  result: IListOpenExternalSessionsResult;
+}
+
+const listOpenExternalSessionsIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":437,"b":442}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_key AS \"stepKey\",\n  correlation_key AS \"correlationKey\",\n  status,\n  payload,\n  resume_payload AS \"resumePayload\",\n  resume_output AS \"resumeOutput\",\n  expires_at AS \"expiresAt\",\n  created_at AS \"createdAt\",\n  updated_at AS \"updatedAt\",\n  resumed_at AS \"resumedAt\",\n  external_session_id AS \"externalSessionId\",\n  external_session_kind AS \"externalSessionKind\"\nFROM workflow_waits\nWHERE run_id = :runId\n  AND status = 'open'\n  AND external_session_id IS NOT NULL\nORDER BY created_at ASC"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   run_id AS "runId",
+ *   step_key AS "stepKey",
+ *   correlation_key AS "correlationKey",
+ *   status,
+ *   payload,
+ *   resume_payload AS "resumePayload",
+ *   resume_output AS "resumeOutput",
+ *   expires_at AS "expiresAt",
+ *   created_at AS "createdAt",
+ *   updated_at AS "updatedAt",
+ *   resumed_at AS "resumedAt",
+ *   external_session_id AS "externalSessionId",
+ *   external_session_kind AS "externalSessionKind"
+ * FROM workflow_waits
+ * WHERE run_id = :runId
+ *   AND status = 'open'
+ *   AND external_session_id IS NOT NULL
+ * ORDER BY created_at ASC
+ * ```
+ */
+export const listOpenExternalSessions = new PreparedQuery<IListOpenExternalSessionsParams,IListOpenExternalSessionsResult>(listOpenExternalSessionsIR);
+
+
 /** 'RecordExternalSessionEvent' parameters type */
 export interface IRecordExternalSessionEventParams {
   data?: Json | null | void;

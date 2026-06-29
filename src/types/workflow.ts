@@ -320,6 +320,10 @@ export type ExternalSessionStepDefinition = {
     externalId: string,
     payload: JsonValue | undefined
   ) => Promise<WaitStepResumeResult> | WaitStepResumeResult
+  cancel?: (
+    context: StepExecutionContext,
+    externalId: string
+  ) => Promise<void> | void
 }
 
 export type WorkflowStepDefinition =

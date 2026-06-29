@@ -600,6 +600,14 @@ const createStoreStub = () => {
     async listFailedRuns() {
       return [...runs.values()].filter((run) => run.status === "failed")
     },
+    async listOpenExternalSessions(runId: string) {
+      return [...waits.values()].filter(
+        (wait) =>
+          wait.runId === runId &&
+          wait.status === "open" &&
+          wait.externalSessionId !== null
+      )
+    },
     async listSchedules() {
       return []
     },
@@ -1283,6 +1291,49 @@ describe("workflow engine", () => {
     })
     expect(second.status).toBe("duplicate")
     expect(second.run?.id).toBe(first.run?.id)
+  })
+
+  it("cancels open external sessions before hard cancellation", async () => {
+    const canceledExternalIds: string[] = []
+    const workflow = defineWorkflow({
+      name: "external-cancel-workflow",
+      version: 1,
+      startAt: "transcode",
+      steps: {
+        transcode: externalSession({
+          sessionKind: "video-transcode",
+          next: "done",
+          timeoutMs: 60_000,
+          start: () => ({
+            externalId: "transcode-cancel-123",
+          }),
+          cancel: (_context, externalId) => {
+            canceledExternalIds.push(externalId)
+          },
+          resume: () => ({
+            patch: {},
+          }),
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+    await engine.tick("test-worker", 5_000)
+
+    const result = await engine.cancelExternalSessionsForRun(run.id)
+
+    expect(result.attempted).toBe(1)
+    expect(canceledExternalIds).toEqual(["transcode-cancel-123"])
   })
 
   it("schedules retries instead of failing immediately when configured", async () => {
