@@ -26,7 +26,7 @@
     "start": "node dist/index.js",
     "build": "node scripts/generate-migrations.mjs && npm run build:css && tsc -p tsconfig.json && node scripts/sync-workspace-packages.mjs",
     "build:packages": "node scripts/sync-workspace-packages.mjs",
-    "build:css": "tailwindcss -i src/views/dashboard/input.css -o dist/src/views/dashboard/styles.css",
+    "build:css": "tailwindcss -i src/views/dashboard/input.css -o src/views/dashboard/styles.css && mkdir -p dist/src/views/dashboard && cp src/views/dashboard/styles.css dist/src/views/dashboard/styles.css",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
