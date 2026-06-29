@@ -67,10 +67,21 @@ const createStoreStub = () => {
   const signals: SignalRecord[] = []
   const events: WorkflowEventRecord[] = []
   const attempts: WorkflowStepAttemptRecord[] = []
+  const usageRows: Array<{
+    id: string
+    runId: string
+    stepAttemptId: string | null
+    resource: string
+    amount: number
+    costUsd: number | null
+    dimension: string | null
+    recordedAt: Date
+  }> = []
   let runCounter = 0
   let waitCounter = 0
   let attemptCounter = 0
   let eventCounter = 0
+  let usageCounter = 0
 
   const now = () => new Date()
 
@@ -468,6 +479,18 @@ const createStoreStub = () => {
             },
           })
         },
+        recordUsage: async (usage) => {
+          usageRows.push({
+            id: `usage-${++usageCounter}`,
+            runId: args.run.id,
+            stepAttemptId: "transactional-attempt",
+            resource: usage.resource,
+            amount: usage.amount,
+            costUsd: usage.costUsd ?? null,
+            dimension: usage.dimension ?? null,
+            recordedAt: now(),
+          })
+        },
         db: {
           query: async () => ({
             rows: [],
@@ -562,6 +585,9 @@ const createStoreStub = () => {
     },
     async getRunEvents(runId: string) {
       return events.filter((event) => event.runId === runId)
+    },
+    async getRunUsage(runId: string) {
+      return usageRows.filter((usage) => usage.runId === runId)
     },
     async listActiveRuns() {
       return [...runs.values()].filter((run) =>
@@ -723,6 +749,29 @@ const createStoreStub = () => {
         attemptId: attempt.id,
         eventId: event.id,
       }
+    },
+    async recordUsage(args: {
+      runId: string
+      stepAttemptId: string | null
+      usage: {
+        resource: string
+        amount: number
+        costUsd?: number
+        dimension?: string
+      }
+    }) {
+      const row = {
+        id: `usage-${++usageCounter}`,
+        runId: args.runId,
+        stepAttemptId: args.stepAttemptId,
+        resource: args.usage.resource,
+        amount: args.usage.amount,
+        costUsd: args.usage.costUsd ?? null,
+        dimension: args.usage.dimension ?? null,
+        recordedAt: now(),
+      }
+      usageRows.push(row)
+      return row
     },
     async resumeWait(args: {
       correlationKey: string
@@ -1489,6 +1538,61 @@ describe("workflow engine", () => {
         stepAttemptId: "attempt-1",
       },
     })
+  })
+
+  it("persists step body usage records", async () => {
+    const workflow = defineWorkflow({
+      name: "usage-workflow",
+      version: 1,
+      startAt: "count",
+      steps: {
+        count: taskStep({
+          kind: "task",
+          next: "done",
+          run: async ({ recordUsage }) => {
+            await recordUsage({
+              resource: "tokens",
+              amount: 120,
+              costUsd: 0.02,
+              dimension: "output",
+            })
+
+            return {
+              patch: {
+                counted: true,
+              },
+            }
+          },
+        }),
+        done: endStep(),
+      },
+    })
+    const store = createStoreStub()
+    const engine = createWorkflowEngine({
+      definitions: [workflow],
+      metrics: createMetrics(),
+      store,
+    })
+
+    const run = await engine.startRun({
+      workflowName: workflow.name,
+      payload: {},
+    })
+
+    await drainEngine(engine)
+
+    const usage = await store.getRunUsage(run.id)
+
+    expect(usage).toMatchObject([
+      {
+        runId: run.id,
+        stepAttemptId: "attempt-1",
+        resource: "tokens",
+        amount: 120,
+        costUsd: 0.02,
+        dimension: "output",
+      },
+    ])
   })
 
   it("completes after bounded retries and preserves the final patch", async () => {

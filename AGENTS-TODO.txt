@@ -46,25 +46,31 @@ Commits so far on this branch (oldest first):
            - POST /v1/external-sessions/:externalId/heartbeat route
            - store.recordExternalHeartbeat generated SQL mutation
            - external heartbeat side effects covered in route + PG tests
+  aecdd47  feat(events): add step event streaming
+           - StepExecutionContext.emit persists typed step events
+           - POST /v1/external-sessions/:externalId/events callback route
+           - transactional task emitted events roll back with task savepoints
 
 Open work-in-flight on this branch (next commits):
-  - Usage ledger + budget caps (Tier 1.4)
+  - External cancellation hooks (Tier 1.5)
 
-Uncommitted working tree since 950fd55:
-  - StepExecutionContext.emit typed channel for step body events
-  - store.emitStepEvent and generated external session event callback mutation
-  - POST /v1/external-sessions/:externalId/events callback route
-  - transactional task emits roll back with the task savepoint
-  - route, engine, and Postgres coverage for step event persistence
+Uncommitted working tree since aecdd47:
+  - workflow_run_usage hash-partitioned usage ledger migration
+  - StepExecutionContext.recordUsage API and workflow budget declaration
+  - store.recordUsage/getRunUsage generated SQL methods
+  - exhausted_budget terminal run status and budget enforcement path
+  - external heartbeat usage ledger integration
+  - dashboard usage panel and API usage rows on run detail
   - npm run typecheck clean
   - npm run lint clean
   - npm run test clean
   - HIPPO_PG_TEST_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres
     npm run test:pg clean
 
-PR 1 (externalSession MVP), PR 2 (heartbeat callback), and PR 3
-(step event streaming) are mergeable to main. PR 4 (usage ledger +
-budget caps) is next — see "PR cadence" below.
+PR 1 (externalSession MVP), PR 2 (heartbeat callback), PR 3 (step
+event streaming), and PR 4 (usage ledger + budget caps) are mergeable
+to main. PR 5 (external cancellation hooks) is next — see "PR cadence"
+below.
 
 Why this work exists
 --------------------
@@ -199,7 +205,7 @@ Tier 1 — Required for credible "long-running external session" story
     Non-agent example: build pipeline step emits "log-line", "test-
     result", "artifact-uploaded" events.
 
-[ ] 4. Usage ledger + budget caps
+[x] 4. Usage ledger + budget caps
     Generic problem: steps consume metered resources (tokens, bytes,
     GPU-minutes, third-party API quota). Workflow should cap total
     consumption and dashboard should aggregate.

@@ -83,6 +83,8 @@ describe("step builders", () => {
       attempt: 1,
       idempotencyKey: "123",
       heartbeat: async () => true,
+      emit: async () => undefined,
+      recordUsage: async () => undefined,
     } as unknown as StepExecutionContext
 
     const result = await myTask.run(mockCtx)
@@ -140,4 +142,3 @@ describe("step builders", () => {
     expect(myEnd.kind).toBe("end")
   })
 })
-

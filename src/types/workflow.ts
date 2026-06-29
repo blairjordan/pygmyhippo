@@ -7,6 +7,7 @@ export type WorkflowRunStatus =
   | "completed"
   | "failed"
   | "compensation_failed"
+  | "exhausted_budget"
   | "canceled"
 
 export type WorkflowCancelMode = "graceful" | "hard"
@@ -52,6 +53,17 @@ export type WorkflowEventRecord = {
   eventType: string
   payload: JsonObject
   createdAt: Date
+}
+
+export type WorkflowUsageRecord = {
+  id: string
+  runId: string
+  stepAttemptId: string | null
+  resource: string
+  amount: number
+  costUsd: number | null
+  dimension: string | null
+  recordedAt: Date
 }
 
 export type WorkflowWaitRecord = {
@@ -100,6 +112,18 @@ export type RetryPolicy = {
   backoffMultiplier?: number
   jitterMs?: number
   nonRetryableErrorTags?: string[]
+}
+
+export type WorkflowUsageInput = {
+  resource: string
+  amount: number
+  costUsd?: number
+  dimension?: string
+}
+
+export type WorkflowBudget = {
+  costUsd?: number
+  resources?: Record<string, number>
 }
 
 export type TaskStepResult = {
@@ -182,6 +206,7 @@ export type StepExecutionContext = {
   idempotencyKey: string
   heartbeat: () => Promise<boolean>
   emit: (event: { type: string; data: JsonValue }) => Promise<void>
+  recordUsage: (usage: WorkflowUsageInput) => Promise<void>
   db: WorkflowStepDatabase
   outbox: WorkflowStepOutbox
   transactional: boolean
@@ -312,5 +337,6 @@ export type WorkflowDefinition = {
   title?: string
   startAt: string
   steps: Record<string, WorkflowStepDefinition>
+  budget?: WorkflowBudget
   queries?: Record<string, (context: JsonObject) => JsonValue>
 }

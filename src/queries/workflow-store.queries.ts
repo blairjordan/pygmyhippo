@@ -5,7 +5,7 @@ export type step_attempt_kind = 'compensate' | 'forward';
 
 export type step_attempt_status = 'completed' | 'failed' | 'started';
 
-export type workflow_run_status = 'canceled' | 'compensation_failed' | 'completed' | 'failed' | 'queued' | 'running' | 'waiting';
+export type workflow_run_status = 'canceled' | 'compensation_failed' | 'completed' | 'exhausted_budget' | 'failed' | 'queued' | 'running' | 'waiting';
 
 export type workflow_wait_status = 'canceled' | 'expired' | 'open' | 'resumed';
 
@@ -2273,6 +2273,261 @@ const recordExternalSessionEventIR: any = {"usedParamSet":{"externalSessionId":t
  * ```
  */
 export const recordExternalSessionEvent = new PreparedQuery<IRecordExternalSessionEventParams,IRecordExternalSessionEventResult>(recordExternalSessionEventIR);
+
+
+/** 'InsertUsage' parameters type */
+export interface IInsertUsageParams {
+  amount?: NumberOrString | null | void;
+  costUsd?: NumberOrString | null | void;
+  dimension?: string | null | void;
+  resource?: string | null | void;
+  runId?: string | null | void;
+  stepAttemptId?: string | null | void;
+}
+
+/** 'InsertUsage' return type */
+export interface IInsertUsageResult {
+  amount: string;
+  costUsd: string | null;
+  dimension: string | null;
+  id: string;
+  recordedAt: Date;
+  resource: string;
+  runId: string;
+  stepAttemptId: string | null;
+}
+
+/** 'InsertUsage' query type */
+export interface IInsertUsageQuery {
+  params: IInsertUsageParams;
+  result: IInsertUsageResult;
+}
+
+const insertUsageIR: any = {"usedParamSet":{"runId":true,"stepAttemptId":true,"resource":true,"amount":true,"costUsd":true,"dimension":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":121,"b":126}]},{"name":"stepAttemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":131,"b":144}]},{"name":"resource","required":false,"transform":{"type":"scalar"},"locs":[{"a":149,"b":157}]},{"name":"amount","required":false,"transform":{"type":"scalar"},"locs":[{"a":162,"b":168}]},{"name":"costUsd","required":false,"transform":{"type":"scalar"},"locs":[{"a":173,"b":180}]},{"name":"dimension","required":false,"transform":{"type":"scalar"},"locs":[{"a":185,"b":194}]}],"statement":"INSERT INTO workflow_run_usage (\n  run_id,\n  step_attempt_id,\n  resource,\n  amount,\n  cost_usd,\n  dimension\n) VALUES (\n  :runId,\n  :stepAttemptId,\n  :resource,\n  :amount,\n  :costUsd,\n  :dimension\n)\nRETURNING\n  id,\n  run_id AS \"runId\",\n  step_attempt_id AS \"stepAttemptId\",\n  resource,\n  amount,\n  cost_usd AS \"costUsd\",\n  dimension,\n  recorded_at AS \"recordedAt\""};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * INSERT INTO workflow_run_usage (
+ *   run_id,
+ *   step_attempt_id,
+ *   resource,
+ *   amount,
+ *   cost_usd,
+ *   dimension
+ * ) VALUES (
+ *   :runId,
+ *   :stepAttemptId,
+ *   :resource,
+ *   :amount,
+ *   :costUsd,
+ *   :dimension
+ * )
+ * RETURNING
+ *   id,
+ *   run_id AS "runId",
+ *   step_attempt_id AS "stepAttemptId",
+ *   resource,
+ *   amount,
+ *   cost_usd AS "costUsd",
+ *   dimension,
+ *   recorded_at AS "recordedAt"
+ * ```
+ */
+export const insertUsage = new PreparedQuery<IInsertUsageParams,IInsertUsageResult>(insertUsageIR);
+
+
+/** 'GetUsageTotals' parameters type */
+export interface IGetUsageTotalsParams {
+  resource?: string | null | void;
+  runId?: string | null | void;
+}
+
+/** 'GetUsageTotals' return type */
+export interface IGetUsageTotalsResult {
+  costUsd: string | null;
+  resourceAmount: string | null;
+}
+
+/** 'GetUsageTotals' query type */
+export interface IGetUsageTotalsQuery {
+  params: IGetUsageTotalsParams;
+  result: IGetUsageTotalsResult;
+}
+
+const getUsageTotalsIR: any = {"usedParamSet":{"resource":true,"runId":true},"params":[{"name":"resource","required":false,"transform":{"type":"scalar"},"locs":[{"a":55,"b":63}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":184,"b":189}]}],"statement":"SELECT\n  COALESCE(SUM(amount) FILTER (WHERE resource = :resource), 0)::text AS \"resourceAmount\",\n  COALESCE(SUM(cost_usd), 0)::text AS \"costUsd\"\nFROM workflow_run_usage\nWHERE run_id = :runId"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   COALESCE(SUM(amount) FILTER (WHERE resource = :resource), 0)::text AS "resourceAmount",
+ *   COALESCE(SUM(cost_usd), 0)::text AS "costUsd"
+ * FROM workflow_run_usage
+ * WHERE run_id = :runId
+ * ```
+ */
+export const getUsageTotals = new PreparedQuery<IGetUsageTotalsParams,IGetUsageTotalsResult>(getUsageTotalsIR);
+
+
+/** 'GetRunUsage' parameters type */
+export interface IGetRunUsageParams {
+  runId?: string | null | void;
+}
+
+/** 'GetRunUsage' return type */
+export interface IGetRunUsageResult {
+  amount: string;
+  costUsd: string | null;
+  dimension: string | null;
+  id: string;
+  recordedAt: Date;
+  resource: string;
+  runId: string;
+  stepAttemptId: string | null;
+}
+
+/** 'GetRunUsage' query type */
+export interface IGetRunUsageQuery {
+  params: IGetRunUsageParams;
+  result: IGetRunUsageResult;
+}
+
+const getRunUsageIR: any = {"usedParamSet":{"runId":true},"params":[{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":201,"b":206}]}],"statement":"SELECT\n  id,\n  run_id AS \"runId\",\n  step_attempt_id AS \"stepAttemptId\",\n  resource,\n  amount,\n  cost_usd AS \"costUsd\",\n  dimension,\n  recorded_at AS \"recordedAt\"\nFROM workflow_run_usage\nWHERE run_id = :runId\nORDER BY recorded_at ASC, id ASC"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * SELECT
+ *   id,
+ *   run_id AS "runId",
+ *   step_attempt_id AS "stepAttemptId",
+ *   resource,
+ *   amount,
+ *   cost_usd AS "costUsd",
+ *   dimension,
+ *   recorded_at AS "recordedAt"
+ * FROM workflow_run_usage
+ * WHERE run_id = :runId
+ * ORDER BY recorded_at ASC, id ASC
+ * ```
+ */
+export const getRunUsage = new PreparedQuery<IGetRunUsageParams,IGetRunUsageResult>(getRunUsageIR);
+
+
+/** 'ExhaustRunBudget' parameters type */
+export interface IExhaustRunBudgetParams {
+  error?: Json | null | void;
+  runId?: string | null | void;
+  stepAttemptId?: string | null | void;
+  stepKey?: string | null | void;
+}
+
+/** 'ExhaustRunBudget' return type */
+export interface IExhaustRunBudgetResult {
+  availableAt: Date;
+  branchedFromAttemptId: string | null;
+  branchedFromAttemptRunId: string | null;
+  branchedFromRunId: string | null;
+  completedAt: Date | null;
+  context: Json;
+  continuedFromRunId: string | null;
+  createdAt: Date;
+  currentStepKey: string | null;
+  definitionName: string;
+  definitionVersion: number;
+  error: Json | null;
+  id: string;
+  input: Json;
+  leaseExpiresAt: Date | null;
+  leaseOwner: string | null;
+  parentRunId: string | null;
+  parentStepKey: string | null;
+  priority: number;
+  result: Json | null;
+  status: workflow_run_status;
+  supersededByRunId: string | null;
+  taskQueue: string;
+  traceContext: string | null;
+  updatedAt: Date;
+}
+
+/** 'ExhaustRunBudget' query type */
+export interface IExhaustRunBudgetQuery {
+  params: IExhaustRunBudgetParams;
+  result: IExhaustRunBudgetResult;
+}
+
+const exhaustRunBudgetIR: any = {"usedParamSet":{"error":true,"runId":true,"stepAttemptId":true,"stepKey":true},"params":[{"name":"error","required":false,"transform":{"type":"scalar"},"locs":[{"a":125,"b":130},{"a":1322,"b":1327},{"a":1793,"b":1798}]},{"name":"runId","required":false,"transform":{"type":"scalar"},"locs":[{"a":274,"b":279}]},{"name":"stepAttemptId","required":false,"transform":{"type":"scalar"},"locs":[{"a":1392,"b":1405}]},{"name":"stepKey","required":false,"transform":{"type":"scalar"},"locs":[{"a":1759,"b":1766}]}],"statement":"WITH updated_run AS (\n  UPDATE workflow_runs\n  SET\n    status = 'exhausted_budget',\n    current_step_key = NULL,\n    error = :error,\n    lease_owner = NULL,\n    lease_expires_at = NULL,\n    available_at = now(),\n    updated_at = now(),\n    completed_at = now()\n  WHERE id = :runId\n    AND status NOT IN ('completed', 'failed', 'compensation_failed', 'canceled', 'exhausted_budget')\n  RETURNING\n    id,\n    parent_run_id AS \"parentRunId\",\n    parent_step_key AS \"parentStepKey\",\n    continued_from_run_id AS \"continuedFromRunId\",\n    branched_from_run_id AS \"branchedFromRunId\",\n    branched_from_attempt_run_id AS \"branchedFromAttemptRunId\",\n    branched_from_attempt_id AS \"branchedFromAttemptId\",\n    superseded_by_run_id AS \"supersededByRunId\",\n    definition_name AS \"definitionName\",\n    definition_version AS \"definitionVersion\",\n    task_queue AS \"taskQueue\",\n    priority,\n    status,\n    current_step_key AS \"currentStepKey\",\n    input,\n    context,\n    result,\n    error,\n    lease_owner AS \"leaseOwner\",\n    lease_expires_at AS \"leaseExpiresAt\",\n    available_at AS \"availableAt\",\n    created_at AS \"createdAt\",\n    updated_at AS \"updatedAt\",\n    completed_at AS \"completedAt\",\n    trace_context AS \"traceContext\"\n), updated_attempt AS (\n  UPDATE workflow_step_attempts\n  SET\n    status = 'failed',\n    error = :error,\n    completed_at = now(),\n    updated_at = now()\n  WHERE id = :stepAttemptId\n    AND run_id IN (SELECT id FROM updated_run)\n    AND status = 'started'\n), canceled_waits AS (\n  UPDATE workflow_waits\n  SET\n    status = 'canceled',\n    updated_at = now()\n  WHERE run_id IN (SELECT id FROM updated_run)\n    AND status = 'open'\n), inserted_event AS (\n  INSERT INTO workflow_events (run_id, step_key, event_type, payload)\n  SELECT id, :stepKey, 'run.exhausted_budget', :error\n  FROM updated_run\n)\nSELECT * FROM updated_run"};
+
+/**
+ * Query generated from SQL:
+ * ```
+ * WITH updated_run AS (
+ *   UPDATE workflow_runs
+ *   SET
+ *     status = 'exhausted_budget',
+ *     current_step_key = NULL,
+ *     error = :error,
+ *     lease_owner = NULL,
+ *     lease_expires_at = NULL,
+ *     available_at = now(),
+ *     updated_at = now(),
+ *     completed_at = now()
+ *   WHERE id = :runId
+ *     AND status NOT IN ('completed', 'failed', 'compensation_failed', 'canceled', 'exhausted_budget')
+ *   RETURNING
+ *     id,
+ *     parent_run_id AS "parentRunId",
+ *     parent_step_key AS "parentStepKey",
+ *     continued_from_run_id AS "continuedFromRunId",
+ *     branched_from_run_id AS "branchedFromRunId",
+ *     branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+ *     branched_from_attempt_id AS "branchedFromAttemptId",
+ *     superseded_by_run_id AS "supersededByRunId",
+ *     definition_name AS "definitionName",
+ *     definition_version AS "definitionVersion",
+ *     task_queue AS "taskQueue",
+ *     priority,
+ *     status,
+ *     current_step_key AS "currentStepKey",
+ *     input,
+ *     context,
+ *     result,
+ *     error,
+ *     lease_owner AS "leaseOwner",
+ *     lease_expires_at AS "leaseExpiresAt",
+ *     available_at AS "availableAt",
+ *     created_at AS "createdAt",
+ *     updated_at AS "updatedAt",
+ *     completed_at AS "completedAt",
+ *     trace_context AS "traceContext"
+ * ), updated_attempt AS (
+ *   UPDATE workflow_step_attempts
+ *   SET
+ *     status = 'failed',
+ *     error = :error,
+ *     completed_at = now(),
+ *     updated_at = now()
+ *   WHERE id = :stepAttemptId
+ *     AND run_id IN (SELECT id FROM updated_run)
+ *     AND status = 'started'
+ * ), canceled_waits AS (
+ *   UPDATE workflow_waits
+ *   SET
+ *     status = 'canceled',
+ *     updated_at = now()
+ *   WHERE run_id IN (SELECT id FROM updated_run)
+ *     AND status = 'open'
+ * ), inserted_event AS (
+ *   INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+ *   SELECT id, :stepKey, 'run.exhausted_budget', :error
+ *   FROM updated_run
+ * )
+ * SELECT * FROM updated_run
+ * ```
+ */
+export const exhaustRunBudget = new PreparedQuery<IExhaustRunBudgetParams,IExhaustRunBudgetResult>(exhaustRunBudgetIR);
 
 
 /** 'CountOpenWaits' parameters type */

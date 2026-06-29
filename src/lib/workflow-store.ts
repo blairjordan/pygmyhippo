@@ -20,6 +20,7 @@ import {
   createSchedule as createScheduleQuery,
   createSignal as createSignalQuery,
   extendLease as extendLeaseQuery,
+  exhaustRunBudget as exhaustRunBudgetQuery,
   expireOpenWaits as expireOpenWaitsQuery,
   failTransactionalTask as failTransactionalTaskQuery,
   failRun as failRunQuery,
@@ -33,12 +34,15 @@ import {
   getRunByIdForUpdate as getRunByIdForUpdateQuery,
   getRunAttempts as getRunAttemptsQuery,
   getRunEvents as getRunEventsQuery,
+  getRunUsage as getRunUsageQuery,
   getStepAttemptByIdForRun as getStepAttemptByIdForRunQuery,
+  getUsageTotals as getUsageTotalsQuery,
   insertEvent as insertEventQuery,
   insertBranchedRun as insertBranchedRunQuery,
   insertOutbox as insertOutboxQuery,
   insertRun as insertRunQuery,
   insertStepAttempt as insertStepAttemptQuery,
+  insertUsage as insertUsageQuery,
   listActiveRuns as listActiveRunsQuery,
   listChildRuns as listChildRunsQuery,
   listFailedRuns as listFailedRunsQuery,
@@ -74,10 +78,13 @@ import type {
   StepAttemptKind,
   StepAttemptStatus,
   WorkflowEventRecord,
+  WorkflowBudget,
   WorkflowRunRecord,
   WorkflowScheduleRecord,
   WorkflowRunStatus,
   WorkflowStepAttemptRecord,
+  WorkflowUsageInput,
+  WorkflowUsageRecord,
   WorkflowWaitRecord,
 } from "../types/workflow.js"
 import type { Database } from "./db.js"
@@ -168,6 +175,17 @@ type IEventRow = {
   createdAt: Date
 }
 
+type IUsageRow = {
+  id: string
+  runId: string
+  stepAttemptId: string | null
+  resource: string
+  amount: string
+  costUsd: string | null
+  dimension: string | null
+  recordedAt: Date
+}
+
 const requireRow = <T>(row: T | undefined, message: string): T => {
   if (!row) {
     throw new Error(message)
@@ -255,6 +273,12 @@ const mapEvent = (row: IEventRow): WorkflowEventRecord => ({
   payload: assertJsonObject(row.payload, "Event payload must be a JSON object"),
 })
 
+const mapUsage = (row: IUsageRow): WorkflowUsageRecord => ({
+  ...row,
+  amount: Number(row.amount),
+  costUsd: row.costUsd === null ? null : Number(row.costUsd),
+})
+
 const insertAttempt = async (
   client: PoolClient,
   args: {
@@ -328,6 +352,7 @@ const terminalRunStatuses = new Set<WorkflowRunStatus>([
   "completed",
   "failed",
   "compensation_failed",
+  "exhausted_budget",
   "canceled",
 ])
 
@@ -359,6 +384,29 @@ const withPromiseTimeout = async <T>(
 }
 
 export class LostLeaseError extends Error {}
+
+export class BudgetExceededError extends Error {
+  constructor(
+    message: string,
+    readonly run: WorkflowRunRecord,
+    readonly usage: WorkflowUsageRecord
+  ) {
+    super(message)
+  }
+}
+
+class TransactionBudgetExceededError extends Error {
+  constructor(
+    readonly usage: WorkflowUsageInput,
+    readonly exhausted: {
+      resource: string
+      limit: number
+      total: number
+    }
+  ) {
+    super("Workflow budget exhausted")
+  }
+}
 
 export const createWorkflowStore = (
   db: Database,
@@ -393,6 +441,72 @@ export const createWorkflowStore = (
       },
       run
     )
+
+  const getBudgetExhaustion = (args: {
+    budget: WorkflowBudget | undefined
+    usage: WorkflowUsageInput
+    resourceAmount: number
+    costUsd: number
+  }) => {
+    const resourceLimit = args.budget?.resources?.[args.usage.resource]
+
+    if (resourceLimit !== undefined && args.resourceAmount > resourceLimit) {
+      return {
+        resource: args.usage.resource,
+        limit: resourceLimit,
+        total: args.resourceAmount,
+      }
+    }
+
+    if (args.budget?.costUsd !== undefined && args.costUsd > args.budget.costUsd) {
+      return {
+        resource: "costUsd",
+        limit: args.budget.costUsd,
+        total: args.costUsd,
+      }
+    }
+
+    return null
+  }
+
+  const createBudgetErrorPayload = (args: {
+    exhausted: {
+      resource: string
+      limit: number
+      total: number
+    }
+    usage: WorkflowUsageInput
+  }): JsonObject => ({
+    message: `Workflow budget exhausted for ${args.exhausted.resource}`,
+    resource: args.exhausted.resource,
+    limit: args.exhausted.limit,
+    total: args.exhausted.total,
+    usage: {
+      resource: args.usage.resource,
+      amount: args.usage.amount,
+      ...(args.usage.costUsd === undefined ? {} : { costUsd: args.usage.costUsd }),
+      ...(args.usage.dimension === undefined
+        ? {}
+        : { dimension: args.usage.dimension }),
+    },
+  })
+
+  const validateUsage = (usage: WorkflowUsageInput) => {
+    if (usage.resource.trim().length === 0) {
+      throw new Error("Usage resource must not be empty")
+    }
+
+    if (!Number.isFinite(usage.amount) || usage.amount < 0) {
+      throw new Error("Usage amount must be a finite non-negative number")
+    }
+
+    if (
+      usage.costUsd !== undefined &&
+      (!Number.isFinite(usage.costUsd) || usage.costUsd < 0)
+    ) {
+      throw new Error("Usage costUsd must be a finite non-negative number")
+    }
+  }
 
   const startRun = async (args: {
     parentRunId?: string | null
@@ -557,6 +671,138 @@ export const createWorkflowStore = (
     await notifyRunEvent(args.runId)
     return event
   }
+
+  const insertUsage = async (args: {
+    runId: string
+    stepAttemptId: string | null
+    usage: WorkflowUsageInput
+    executor: Database | PoolClient
+  }) => {
+    validateUsage(args.usage)
+
+    const [row] = await insertUsageQuery.run(
+      {
+        runId: args.runId,
+        stepAttemptId: args.stepAttemptId,
+        resource: args.usage.resource,
+        amount: args.usage.amount,
+        costUsd: args.usage.costUsd ?? null,
+        dimension: args.usage.dimension ?? null,
+      },
+      args.executor
+    )
+
+    return mapUsage(requireRow(row, "Failed to insert workflow usage"))
+  }
+
+  const recordUsageWithExecutor = async (args: {
+    runId: string
+    stepKey: string | null
+    stepAttemptId: string | null
+    usage: WorkflowUsageInput
+    budget: WorkflowBudget | undefined
+    executor: Database | PoolClient
+  }) => {
+    const usage = await insertUsage({
+      runId: args.runId,
+      stepAttemptId: args.stepAttemptId,
+      usage: args.usage,
+      executor: args.executor,
+    })
+    const [totalsRow] = await getUsageTotalsQuery.run(
+      {
+        runId: args.runId,
+        resource: args.usage.resource,
+      },
+      args.executor
+    )
+    const resourceAmount = Number(totalsRow?.resourceAmount ?? 0)
+    const costUsd = Number(totalsRow?.costUsd ?? 0)
+    const exhausted = getBudgetExhaustion({
+      budget: args.budget,
+      usage: args.usage,
+      resourceAmount,
+      costUsd,
+    })
+
+    if (!exhausted) {
+      return { status: "recorded" as const, usage, run: null }
+    }
+
+    const error = createBudgetErrorPayload({
+      exhausted,
+      usage: args.usage,
+    })
+    const [row] = await exhaustRunBudgetQuery.run(
+      {
+        runId: args.runId,
+        stepKey: args.stepKey,
+        stepAttemptId: args.stepAttemptId,
+        error,
+      },
+      args.executor
+    )
+    const run = mapRun(requireRow(row, "Failed to exhaust workflow budget"))
+    return { status: "exhausted_budget" as const, usage, run }
+  }
+
+  const getRunUsage = async (runId: string) =>
+    withStoreSpan(
+      {
+        name: "get_run_usage",
+        attributes: createTraceAttributes({
+          operation: "store.get_run_usage",
+          runId,
+        }),
+      },
+      async () => {
+        const rows = await getRunUsageQuery.run({ runId }, db)
+        return rows.map(mapUsage)
+      }
+    )
+
+  const recordUsage = async (args: {
+    runId: string
+    stepKey: string | null
+    stepAttemptId: string | null
+    usage: WorkflowUsageInput
+    budget?: WorkflowBudget
+  }) =>
+    withStoreSpan(
+      {
+        name: "record_usage",
+        attributes: {
+          ...createTraceAttributes({
+            operation: "store.record_usage",
+            runId: args.runId,
+            stepKey: args.stepKey,
+          }),
+          "workflow.usage.resource": args.usage.resource,
+        },
+      },
+      async () => {
+        const result = await recordUsageWithExecutor({
+          runId: args.runId,
+          stepKey: args.stepKey,
+          stepAttemptId: args.stepAttemptId,
+          usage: args.usage,
+          budget: args.budget,
+          executor: db,
+        })
+
+        await notifyRunEvent(args.runId)
+
+        if (result.run) {
+          throw new BudgetExceededError(
+            "Workflow budget exhausted",
+            result.run,
+            result.usage
+          )
+        }
+
+        return result.usage
+      }
+    )
 
   const getRunAttempts = async (runId: string) => {
     return withStoreSpan(
@@ -1956,6 +2202,7 @@ export const createWorkflowStore = (
     workerId: string
     nextStepKey?: string
     retryPolicy?: RetryPolicy
+    budget?: WorkflowBudget
     timeoutMs?: number
     resolveRetryAvailableAt: (input: {
       attempt: number
@@ -2016,6 +2263,7 @@ export const createWorkflowStore = (
             },
           })
           const now = new Date()
+          const pendingUsage: WorkflowUsageInput[] = []
           const context: StepExecutionContext = {
             run: lockedRun,
             input: lockedRun.input,
@@ -2033,6 +2281,42 @@ export const createWorkflowStore = (
                 data: event.data,
                 executor: client,
               })
+            },
+            recordUsage: async (usage) => {
+              validateUsage(usage)
+
+              const [totalsRow] = await getUsageTotalsQuery.run(
+                {
+                  runId: lockedRun.id,
+                  resource: usage.resource,
+                },
+                client
+              )
+              const resourceAmount =
+                Number(totalsRow?.resourceAmount ?? 0) +
+                pendingUsage
+                  .filter((candidate) => candidate.resource === usage.resource)
+                  .reduce((total, candidate) => total + candidate.amount, 0) +
+                usage.amount
+              const costUsd =
+                Number(totalsRow?.costUsd ?? 0) +
+                pendingUsage.reduce(
+                  (total, candidate) => total + (candidate.costUsd ?? 0),
+                  0
+                ) +
+                (usage.costUsd ?? 0)
+              const exhausted = getBudgetExhaustion({
+                budget: args.budget,
+                usage,
+                resourceAmount,
+                costUsd,
+              })
+
+              pendingUsage.push(usage)
+
+              if (exhausted) {
+                throw new TransactionBudgetExceededError(usage, exhausted)
+              }
             },
             db: {
               query: async <T extends object>(
@@ -2093,6 +2377,25 @@ export const createWorkflowStore = (
           )
         }
 
+        for (const usage of pendingUsage) {
+          const usageResult = await recordUsageWithExecutor({
+            runId: lockedRun.id,
+            stepKey: args.stepKey,
+            stepAttemptId: attempt.id,
+            usage,
+            budget: args.budget,
+            executor: client,
+          })
+
+          if (usageResult.run) {
+            await client.query("RELEASE SAVEPOINT hippo_step_body")
+            return {
+              outcome: "exhausted_budget" as const,
+              run: usageResult.run,
+            }
+          }
+        }
+
         const [updatedRow] = await completeTransactionalTaskQuery.run(
           {
             runId: lockedRun.id,
@@ -2118,6 +2421,45 @@ export const createWorkflowStore = (
       } catch (error) {
         await client.query("ROLLBACK TO SAVEPOINT hippo_step_body")
         await client.query("RELEASE SAVEPOINT hippo_step_body")
+
+        if (error instanceof TransactionBudgetExceededError) {
+          let exhaustedRun: WorkflowRunRecord | null = null
+
+          for (const usage of pendingUsage) {
+            const usageRecord = await insertUsage({
+              runId: lockedRun.id,
+              stepAttemptId: attempt.id,
+              usage,
+              executor: client,
+            })
+
+            if (usage === error.usage) {
+              const [row] = await exhaustRunBudgetQuery.run(
+                {
+                  runId: lockedRun.id,
+                  stepKey: args.stepKey,
+                  stepAttemptId: attempt.id,
+                  error: createBudgetErrorPayload({
+                    exhausted: error.exhausted,
+                    usage,
+                  }),
+                },
+                client
+              )
+              exhaustedRun = mapRun(
+                requireRow(row, "Failed to exhaust workflow budget")
+              )
+            }
+
+            void usageRecord
+          }
+
+          return {
+            outcome: "exhausted_budget" as const,
+            run: requireRow(exhaustedRun, "Failed to exhaust workflow budget"),
+          }
+        }
+
         const retryPolicy = args.retryPolicy
         const errorTag = args.getErrorTag(error)
         const isNonRetryable =
@@ -2448,6 +2790,7 @@ export const createWorkflowStore = (
     getRun,
     getRunAttempts,
     getRunEvents,
+    getRunUsage,
     listChildRuns,
     openWait,
     ping,
@@ -2463,6 +2806,7 @@ export const createWorkflowStore = (
     queryStepDatabase,
     recordExternalHeartbeat,
     recordExternalSessionEvent,
+    recordUsage,
     recoverExpiredLeases,
     requestCancelRun,
     resumeExternalSession,

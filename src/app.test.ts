@@ -145,6 +145,9 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
   async getRunEvents(): Promise<WorkflowEventRecord[]> {
     return []
   },
+  async getRunUsage() {
+    return []
+  },
   async listActiveRuns() {
     return []
   },
@@ -200,6 +203,18 @@ const createStoreStub = (healthy: boolean | Error = true) => ({
       stepKey: null,
       attemptId: null,
       eventId: null,
+    }
+  },
+  async recordUsage() {
+    return {
+      id: "usage-1",
+      runId: "run-1",
+      stepAttemptId: null,
+      resource: "tokens",
+      amount: 1,
+      costUsd: null,
+      dimension: null,
+      recordedAt: new Date(),
     }
   },
   async recoverExpiredLeases() {
@@ -540,8 +555,17 @@ describe("app routes", () => {
       leaseMs: number
       payload: JsonObject
     } | null = null
+    let capturedUsage: {
+      runId: string
+      stepKey: string | null
+      stepAttemptId: string | null
+      usage: JsonObject
+    } | null = null
     const heartbeatStore = {
       ...createStoreStub(),
+      async getRun() {
+        return createRunRecord()
+      },
       async recordExternalHeartbeat(args: {
         externalSessionId: string
         leaseMs: number
@@ -553,6 +577,24 @@ describe("app routes", () => {
           runId: "run-1",
           stepKey: "transcode",
           attemptId: "attempt-1",
+        }
+      },
+      async recordUsage(args: {
+        runId: string
+        stepKey: string | null
+        stepAttemptId: string | null
+        usage: JsonObject
+      }) {
+        capturedUsage = args
+        return {
+          id: "usage-1",
+          runId: args.runId,
+          stepAttemptId: args.stepAttemptId,
+          resource: String(args.usage.resource),
+          amount: Number(args.usage.amount),
+          costUsd: null,
+          dimension: null,
+          recordedAt: new Date(),
         }
       },
     }
@@ -574,6 +616,10 @@ describe("app routes", () => {
       payload: {
         progress: 0.5,
         message: "halfway",
+        usage: {
+          resource: "tokens",
+          amount: 42,
+        },
       },
     })
 
@@ -590,6 +636,19 @@ describe("app routes", () => {
       payload: {
         progress: 0.5,
         message: "halfway",
+        usage: {
+          resource: "tokens",
+          amount: 42,
+        },
+      },
+    })
+    expect(capturedUsage).toMatchObject({
+      runId: "run-1",
+      stepKey: "transcode",
+      stepAttemptId: "attempt-1",
+      usage: {
+        resource: "tokens",
+        amount: 42,
       },
     })
 

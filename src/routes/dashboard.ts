@@ -5,6 +5,7 @@ import type {
   WorkflowRunRecord,
   WorkflowRunStatus,
   WorkflowStepAttemptRecord,
+  WorkflowUsageRecord,
 } from "../types/workflow.js"
 import { getWorkflowMermaidNodeIds } from "../lib/workflow-definition.js"
 
@@ -33,6 +34,7 @@ const statusToneByRun = {
   completed: "tone-completed",
   failed: "tone-failed",
   compensation_failed: "tone-failed",
+  exhausted_budget: "tone-failed",
   canceled: "tone-canceled",
 } as const
 
@@ -810,7 +812,7 @@ const statusFilterOptions: { label: string; statuses: WorkflowRunStatus[]; id: s
   {
     id: "failed",
     label: "Failed",
-    statuses: ["failed", "compensation_failed"],
+    statuses: ["failed", "compensation_failed", "exhausted_budget"],
   },
   { id: "canceled", label: "Canceled", statuses: ["canceled"] },
 ]
@@ -1094,6 +1096,7 @@ export const renderRunDetailDocument = (args: {
   lastEventId: number
   lineage: string
   run: WorkflowRunRecord | null
+  usage: string
   workflowMermaid: string
   workflowStepActions?: Record<
     string,
@@ -1309,6 +1312,13 @@ export const renderRunDetailDocument = (args: {
     </section>
     <article class="card">
       <div class="card-header">
+        <h3 class="card-title">Usage</h3>
+        <p class="card-description">Metered resources recorded by this run.</p>
+      </div>
+      <div class="card-content card-list">${args.usage}</div>
+    </article>
+    <article class="card">
+      <div class="card-header">
         <h3 class="card-title">Lineage</h3>
         <p class="card-description">Parent, continue-as-new, and rewind/fork relationships for this run.</p>
       </div>
@@ -1443,6 +1453,28 @@ export const renderEventCard = (
   <strong>${escapeHtml(event.eventType)}</strong>
   <time>${escapeHtml(formatDateTime(event.createdAt))}</time>
   <pre class="pre-json">${formatJson(event.payload)}</pre>
+</article>`
+
+export const renderUsageCard = (
+  usage: Pick<
+    WorkflowUsageRecord,
+    | "amount"
+    | "costUsd"
+    | "dimension"
+    | "recordedAt"
+    | "resource"
+    | "stepAttemptId"
+  >
+) => `<article class="entry">
+  <strong>${escapeHtml(usage.resource)} · ${escapeHtml(String(usage.amount))}</strong>
+  <time>${escapeHtml(formatDateTime(usage.recordedAt))}</time>
+  <pre class="pre-json">${formatJson({
+    resource: usage.resource,
+    amount: usage.amount,
+    costUsd: usage.costUsd,
+    dimension: usage.dimension,
+    stepAttemptId: usage.stepAttemptId,
+  })}</pre>
 </article>`
 
 export const renderLineageRunCard = (

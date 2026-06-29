@@ -16,7 +16,7 @@ import {
   type HippoTracer,
 } from "../lib/tracing.js"
 import type { WorkflowEngine } from "../lib/workflow-engine.js"
-import type { WorkflowStore } from "../lib/workflow-store.js"
+import { BudgetExceededError, type WorkflowStore } from "../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import {
   RUNS_PAGE_SIZE,
@@ -28,6 +28,7 @@ import {
   renderLineageRunCard,
   renderRunDetailDocument,
   renderRunsIndexDocument,
+  renderUsageCard,
   resolveStatusFilter,
 } from "./dashboard.js"
 
@@ -108,6 +109,7 @@ const operatorRunsQuerySchema = z.object({
       "completed",
       "failed",
       "compensation_failed",
+      "exhausted_budget",
       "canceled",
     ])
     .optional(),
@@ -180,6 +182,7 @@ const terminalRunStatuses = new Set([
   "completed",
   "failed",
   "compensation_failed",
+  "exhausted_budget",
   "canceled",
 ])
 
@@ -544,10 +547,11 @@ export const createWorkflowRoutes = (args: {
       run: async () => {
         const params = runIdParamsSchema.parse(request.params)
         const run = await getExistingRun(app, args.store, params.runId)
-        const [events, attempts, lineage] = await Promise.all([
+        const [events, attempts, lineage, usage] = await Promise.all([
           args.store.getRunEvents(run.id),
           args.store.getRunAttempts(run.id),
           args.store.listRunLineage(run.id),
+          args.store.getRunUsage(run.id),
         ])
         const workflow = args.engine.getWorkflow(
           run.definitionName,
@@ -568,6 +572,10 @@ export const createWorkflowRoutes = (args: {
               ? lineage.map(renderLineageRunCard).join("")
               : '<div class="entry">No lineage recorded yet.</div>',
           run,
+          usage:
+            usage.length > 0
+              ? usage.map(renderUsageCard).join("")
+              : '<div class="entry">No usage recorded yet.</div>',
           workflowMermaid: renderWorkflowAsMermaid(workflow, {
             ...(run.currentStepKey === null
               ? {}
@@ -1166,10 +1174,11 @@ export const createWorkflowRoutes = (args: {
           throw app.httpErrors.notFound(`Run "${params.runId}" not found`)
         }
 
-        const [events, attempts, lineage] = await Promise.all([
+        const [events, attempts, lineage, usage] = await Promise.all([
           args.store.getRunEvents(run.id),
           args.store.getRunAttempts(run.id),
           args.store.listRunLineage(run.id),
+          args.store.getRunUsage(run.id),
         ])
 
         return {
@@ -1177,6 +1186,7 @@ export const createWorkflowRoutes = (args: {
           attempts,
           events,
           lineage,
+          usage,
         }
       },
     })
@@ -1523,9 +1533,43 @@ export const createWorkflowRoutes = (args: {
           )
         }
 
+        let budgetOutcome:
+          | {
+              runId: string
+              status: "exhausted_budget"
+            }
+          | null = null
+
+        if (usage !== undefined && heartbeat.runId) {
+          const run = await args.store.getRun(heartbeat.runId)
+          const workflow =
+            run === null
+              ? null
+              : args.engine.getWorkflow(run.definitionName, run.definitionVersion)
+
+          try {
+            await args.store.recordUsage({
+              runId: heartbeat.runId,
+              stepKey: heartbeat.stepKey,
+              stepAttemptId: heartbeat.attemptId,
+              usage,
+              ...(workflow?.budget === undefined ? {} : { budget: workflow.budget }),
+            })
+          } catch (error) {
+            if (!(error instanceof BudgetExceededError)) {
+              throw error
+            }
+
+            budgetOutcome = {
+              runId: error.run.id,
+              status: "exhausted_budget",
+            }
+          }
+        }
+
         reply.code(202)
         return {
-          outcome: heartbeat.status,
+          outcome: budgetOutcome?.status ?? heartbeat.status,
           runId: heartbeat.runId,
           stepKey: heartbeat.stepKey,
           attemptId: heartbeat.attemptId,

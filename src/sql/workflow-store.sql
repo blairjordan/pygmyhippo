@@ -1056,6 +1056,117 @@ SELECT
   (SELECT id FROM active_attempt) AS "attemptId",
   (SELECT id FROM inserted_event) AS "eventId";
 
+/* @name InsertUsage */
+INSERT INTO workflow_run_usage (
+  run_id,
+  step_attempt_id,
+  resource,
+  amount,
+  cost_usd,
+  dimension
+) VALUES (
+  :runId,
+  :stepAttemptId,
+  :resource,
+  :amount,
+  :costUsd,
+  :dimension
+)
+RETURNING
+  id,
+  run_id AS "runId",
+  step_attempt_id AS "stepAttemptId",
+  resource,
+  amount,
+  cost_usd AS "costUsd",
+  dimension,
+  recorded_at AS "recordedAt";
+
+/* @name GetUsageTotals */
+SELECT
+  COALESCE(SUM(amount) FILTER (WHERE resource = :resource), 0)::text AS "resourceAmount",
+  COALESCE(SUM(cost_usd), 0)::text AS "costUsd"
+FROM workflow_run_usage
+WHERE run_id = :runId;
+
+/* @name GetRunUsage */
+SELECT
+  id,
+  run_id AS "runId",
+  step_attempt_id AS "stepAttemptId",
+  resource,
+  amount,
+  cost_usd AS "costUsd",
+  dimension,
+  recorded_at AS "recordedAt"
+FROM workflow_run_usage
+WHERE run_id = :runId
+ORDER BY recorded_at ASC, id ASC;
+
+/* @name ExhaustRunBudget */
+WITH updated_run AS (
+  UPDATE workflow_runs
+  SET
+    status = 'exhausted_budget',
+    current_step_key = NULL,
+    error = :error,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    available_at = now(),
+    updated_at = now(),
+    completed_at = now()
+  WHERE id = :runId
+    AND status NOT IN ('completed', 'failed', 'compensation_failed', 'canceled', 'exhausted_budget')
+  RETURNING
+    id,
+    parent_run_id AS "parentRunId",
+    parent_step_key AS "parentStepKey",
+    continued_from_run_id AS "continuedFromRunId",
+    branched_from_run_id AS "branchedFromRunId",
+    branched_from_attempt_run_id AS "branchedFromAttemptRunId",
+    branched_from_attempt_id AS "branchedFromAttemptId",
+    superseded_by_run_id AS "supersededByRunId",
+    definition_name AS "definitionName",
+    definition_version AS "definitionVersion",
+    task_queue AS "taskQueue",
+    priority,
+    status,
+    current_step_key AS "currentStepKey",
+    input,
+    context,
+    result,
+    error,
+    lease_owner AS "leaseOwner",
+    lease_expires_at AS "leaseExpiresAt",
+    available_at AS "availableAt",
+    created_at AS "createdAt",
+    updated_at AS "updatedAt",
+    completed_at AS "completedAt",
+    trace_context AS "traceContext"
+), updated_attempt AS (
+  UPDATE workflow_step_attempts
+  SET
+    status = 'failed',
+    error = :error,
+    completed_at = now(),
+    updated_at = now()
+  WHERE id = :stepAttemptId
+    AND run_id IN (SELECT id FROM updated_run)
+    AND status = 'started'
+), canceled_waits AS (
+  UPDATE workflow_waits
+  SET
+    status = 'canceled',
+    updated_at = now()
+  WHERE run_id IN (SELECT id FROM updated_run)
+    AND status = 'open'
+), inserted_event AS (
+  INSERT INTO workflow_events (run_id, step_key, event_type, payload)
+  SELECT id, :stepKey, 'run.exhausted_budget', :error
+  FROM updated_run
+)
+SELECT * FROM updated_run;
+
 /* @name CountOpenWaits */
 SELECT COUNT(*)::int AS "waitCount"
 FROM workflow_waits

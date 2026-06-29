@@ -18,7 +18,11 @@ import {
   withTraceContext,
   type HippoTracer,
 } from "./tracing.js"
-import { LostLeaseError, type WorkflowStore } from "./workflow-store.js"
+import {
+  BudgetExceededError,
+  LostLeaseError,
+  type WorkflowStore,
+} from "./workflow-store.js"
 
 const asErrorPayload = (error: unknown): JsonObject => ({
   message: error instanceof Error ? error.message : "Unknown error",
@@ -161,6 +165,7 @@ const createExecutionContext = (args: {
   stepKey: string
   heartbeat: () => Promise<boolean>
   emit: StepExecutionContext["emit"]
+  recordUsage: StepExecutionContext["recordUsage"]
   db: StepExecutionContext["db"]
   outbox: StepExecutionContext["outbox"]
   transactional: boolean
@@ -173,12 +178,14 @@ const createExecutionContext = (args: {
   idempotencyKey: `${args.run.id}:${args.stepKey}`,
   heartbeat: args.heartbeat,
   emit: args.emit,
+  recordUsage: args.recordUsage,
   db: args.db,
   outbox: args.outbox,
   transactional: args.transactional,
 })
 
 const noopEmit: StepExecutionContext["emit"] = async () => {}
+const noopRecordUsage: StepExecutionContext["recordUsage"] = async () => {}
 
 const createStepInput = (
   run: WorkflowRunRecord,
@@ -263,6 +270,7 @@ const isTerminalStatus = (status: WorkflowRunRecord["status"]) =>
   status === "completed" ||
   status === "failed" ||
   status === "compensation_failed" ||
+  status === "exhausted_budget" ||
   status === "canceled"
 
 const createRetryDelayInput = (retryPolicy: {
@@ -455,6 +463,7 @@ const continueRun = async (args: {
           stepKey,
           heartbeat: async () => false,
           emit: noopEmit,
+          recordUsage: noopRecordUsage,
           db: stepBindings.db,
           outbox: stepBindings.outbox,
           transactional: false,
@@ -510,6 +519,17 @@ const continueRun = async (args: {
               stepAttemptId: attempt.id,
               type: event.type,
               data: event.data,
+            })
+          },
+          recordUsage: async (usage) => {
+            await args.store.recordUsage({
+              runId: activeRun.id,
+              stepKey,
+              stepAttemptId: attempt.id,
+              usage,
+              ...(definition.budget === undefined
+                ? {}
+                : { budget: definition.budget }),
             })
           },
           db: stepBindings.db,
@@ -575,6 +595,7 @@ const continueRun = async (args: {
             stepKey,
             heartbeat: async () => false,
             emit: noopEmit,
+            recordUsage: noopRecordUsage,
             db: stepBindings.db,
             outbox: stepBindings.outbox,
             transactional: false,
@@ -687,6 +708,17 @@ const continueRun = async (args: {
                 stepAttemptId: attempt.id,
                 type: event.type,
                 data: event.data,
+              })
+            },
+            recordUsage: async (usage) => {
+              await args.store.recordUsage({
+                runId: activeRun.id,
+                stepKey,
+                stepAttemptId: attempt.id,
+                usage,
+                ...(definition.budget === undefined
+                  ? {}
+                  : { budget: definition.budget }),
               })
             },
             db: stepBindings.db,
@@ -854,6 +886,7 @@ const continueRun = async (args: {
           workerId: args.workerId,
           ...(step.next === undefined ? {} : { nextStepKey: step.next }),
           ...(step.retry === undefined ? {} : { retryPolicy: step.retry }),
+          ...(definition.budget === undefined ? {} : { budget: definition.budget }),
           ...(step.timeoutMs === undefined ? {} : { timeoutMs: step.timeoutMs }),
           resolveRetryAvailableAt: ({ attempt, retryPolicy }) =>
             getRetryAvailableAt({
@@ -870,6 +903,10 @@ const continueRun = async (args: {
           return null
         }
 
+        if (!outcome.run) {
+          return null
+        }
+
         activeRun = outcome.run
 
         if (outcome.outcome === "completed") {
@@ -878,6 +915,22 @@ const continueRun = async (args: {
             step: stepKey,
             status: "completed",
           })
+        } else if (outcome.outcome === "exhausted_budget") {
+          args.metrics.stepAttempts.inc({
+            workflow: definition.name,
+            step: stepKey,
+            status: "failed",
+          })
+          args.metrics.runsFailed.inc({
+            workflow: definition.name,
+            step: stepKey,
+          })
+          observeRunDuration({
+            metrics: args.metrics,
+            run: activeRun,
+            status: "failed",
+          })
+          return activeRun
         } else {
           args.metrics.stepAttempts.inc({
             workflow: definition.name,
@@ -988,6 +1041,25 @@ const continueRun = async (args: {
         } catch (error) {
       if (error instanceof LostLeaseError) {
         return null
+      }
+
+      if (error instanceof BudgetExceededError) {
+        activeRun = error.run
+        args.metrics.stepAttempts.inc({
+          workflow: definition.name,
+          step: stepKey,
+          status: "failed",
+        })
+        args.metrics.runsFailed.inc({
+          workflow: definition.name,
+          step: stepKey,
+        })
+        observeRunDuration({
+          metrics: args.metrics,
+          run: activeRun,
+          status: "failed",
+        })
+        return activeRun
       }
 
       const retryPolicy =
@@ -1176,6 +1248,17 @@ const compensateRun = async (args: {
                   stepAttemptId: compensationAttempt.id,
                   type: event.type,
                   data: event.data,
+                })
+              },
+              recordUsage: async (usage) => {
+                await args.store.recordUsage({
+                  runId: activeRun.id,
+                  stepKey: item.stepKey,
+                  stepAttemptId: compensationAttempt.id,
+                  usage,
+                  ...(definition.budget === undefined
+                    ? {}
+                    : { budget: definition.budget }),
                 })
               },
               db: {
@@ -1399,6 +1482,17 @@ export const createWorkflowEngine = (args: {
               stepKey: wait.stepKey,
               heartbeat: async () => false,
               emit: noopEmit,
+              recordUsage: async (usage) => {
+                await args.store.recordUsage({
+                  runId: run.id,
+                  stepKey: wait.stepKey,
+                  stepAttemptId: null,
+                  usage,
+                  ...(definition.budget === undefined
+                    ? {}
+                    : { budget: definition.budget }),
+                })
+              },
               db: {
                 query: args.store.queryStepDatabase,
               },
@@ -1483,6 +1577,17 @@ export const createWorkflowEngine = (args: {
                 stepKey: wait.stepKey,
                 heartbeat: async () => false,
                 emit: noopEmit,
+                recordUsage: async (usage) => {
+                  await args.store.recordUsage({
+                    runId: run.id,
+                    stepKey: wait.stepKey,
+                    stepAttemptId: null,
+                    usage,
+                    ...(definition.budget === undefined
+                      ? {}
+                      : { budget: definition.budget }),
+                  })
+                },
                 db: {
                   query: args.store.queryStepDatabase,
                 },
