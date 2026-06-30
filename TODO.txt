@@ -18,16 +18,15 @@ Next up (ordered, work top-down)
 1. Query/operator surfaces                                         — richer run listing, search, and admin workflow
 2. OTel spans + deeper observability                               — production diagnostics
 3. Time-travel rewind/fork                                         — major operator unlock
-4. Tier 1 SDK monorepo split + publish                             — local public entrypoints exist; publishable packaging still remains
+4. Tier 1 SDK monorepo split + publish                             — split + publish done; example/demo names aligned to pygmyhippo-*; re-run acceptance from a fresh repo against the registry
 5. Examples directory with realistic workflows                     — prove the primitives on real flows
 6. CLI ergonomics                                                  — operator CLI parity with dashboard
 7. Architecture cleanup                                            — split oversized store/route/test files to match repo rules
 8. Test hardening                                                  — CLI command coverage, scaffold smoke, and worker-loop edge cases
 
 Critical code debt
-- [ ] Split oversized handwritten TypeScript files to satisfy `.codex/rules/clean-architecture.md`.
-  Current offenders: `src/lib/workflow-store.ts`, `src/routes/workflows.ts`, `src/lib/workflow-engine.test.ts`, and `src/lib/workflow-store.pg.test.ts`.
-  Target split: store concerns into focused modules, route registration vs handlers/views, and long integration tests into feature suites.
+- [x] Split oversized handwritten TypeScript files to satisfy `.codex/rules/clean-architecture.md`.
+  Done: `src/routes/workflows.ts` split into sub-files under `src/routes/workflows/`. `src/lib/workflow-store.ts` split into modular domains under `src/lib/store/`. `src/lib/workflow-engine.test.ts` and `src/lib/workflow-store.pg.test.ts` split into smaller modular test suites. All files satisfy clean architecture line limits.
 - [ ] Add scaffold smoke coverage that runs generated app checks against the real generated files.
   Cover: package scripts, env defaults, workflow import path, dashboard start command, and generated README commands.
 
@@ -43,9 +42,8 @@ Tier 1 — table stakes for DE
 - [x] Signals: push events into a running run
   Durable signal table + route + engine consume-or-open-wait branch + atomic consumeSignalAndResumeWait closing the post-openWait race (commit 31f4f83).
   Optional follow-up: client-supplied dedup_key with unique (run_id, signal_name, dedup_key) for idempotent signal posts.
-- [~] Queries: read live state without mutation
-  Current state: run detail, attempts, events, active/failed/stuck operator queries exist, plus filtered `GET /v1/operators/runs`, lineage inspection via `GET /v1/operators/runs/:runId/lineage`, and single-run context projection.
-  Open: workflow-owned projection contracts for clients that should not consume raw context keys, plus pagination/cursor semantics once operator lists get larger.
+- [x] Queries: read live state without mutation
+  Current state: run detail (with auto-computed `projections` from workflow `queries`), attempts, events, filtered `GET /v1/operators/runs`, active/failed/stuck operator queries all share cursor pagination (`afterUpdatedAt` + `afterId` → `nextCursor`), lineage inspection via `GET /v1/operators/runs/:runId/lineage`, single-run context projection, and per-name projection via `GET /v1/runs/:runId/query/:queryName`. Workflow-owned query/projection functions are the contract; raw context remains available for debugging.
 - [~] Retry policy per step
   Current state: max attempts, exponential backoff, jitter, max delay cap, and non-retryable error tags are implemented.
   Open: richer retry classification and policy presets.
@@ -127,9 +125,10 @@ Tier 3.7 — Agent-shaped generic primitives
   Cost rollups per run / workflow / day. Top consumers. Top resources. Pure SQL aggregation on top of the usage ledger.
 
 Tier 4 — SDK + packaging (PROMOTED — DX is the pitch, not features)
-- [ ] Tier 1 SDK: TS in-process SDK (ship current capability as a real package)
+- [~] Tier 1 SDK: TS in-process SDK (ship current capability as a real package)
   Goal: someone can `npm install` hippo, define workflows in their own repo, run a worker + API server, without copy-pasting from this repo. No new runtime features — pure packaging, public API surface, and DX.
-  Current state: local `hippo/sdk`, `hippo/core`, and `hippo/server` entrypoints resolve through the root `exports` map, `packages/core`, `packages/sdk`, and `packages/server` now exist as workspace package previews, and `npm run build` mirrors the compiled runtime into those package directories for local smoke tests.
+  Current state: workspace split shipped (`packages/core|sdk|server|cli`) and `pygmyhippo-core`, `pygmyhippo-sdk`, `pygmyhippo-server`, `pygmyhippo-cli` are published at `0.1.0` on the public npm registry (`pygmyhippo-cli` exposes the `hippo` bin). `npm run build` mirrors compiled runtime into the workspace dirs and `npm run test:public-api` verifies the public surface.
+  Open: rerun acceptance from a fresh repo against the public registry now that example/demo imports use `pygmyhippo-*`; decide whether to publish `pygmyhippo` umbrella meta-package (currently 404 on registry).
   Scope:
     1. Split the repo into packages (monorepo, e.g. npm workspaces or pnpm):
        - @hippo/core           engine + store + types (current src/lib + src/types + src/queries + src/sql)
