@@ -44,6 +44,10 @@ export const migrations = [
   {
     "name": "20260629224100_run_kv.sql",
     "sql": "-- migrate:up\nCREATE TABLE workflow_run_kv (\n  run_id UUID NOT NULL REFERENCES workflow_runs (id) ON DELETE CASCADE,\n  key TEXT NOT NULL,\n  value JSONB NOT NULL,\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  PRIMARY KEY (run_id, key)\n);\n\nCREATE INDEX workflow_run_kv_run_id_idx ON workflow_run_kv (run_id);\n\nCOMMENT ON TABLE workflow_run_kv IS 'Run-scoped key-value side channel store';\n\n-- migrate:down\nDROP TABLE IF EXISTS workflow_run_kv;\n"
+  },
+  {
+    "name": "20260701132429_add_runs_metadata.sql",
+    "sql": "-- migrate:up\nALTER TABLE workflow_runs ADD COLUMN metadata jsonb DEFAULT '{}'::jsonb NOT NULL;\nCREATE INDEX idx_workflow_runs_metadata ON workflow_runs USING GIN (metadata);\n\n-- migrate:down\nDROP INDEX idx_workflow_runs_metadata;\nALTER TABLE workflow_runs DROP COLUMN metadata;\n"
   }
 ] as const satisfies readonly {
   readonly name: string

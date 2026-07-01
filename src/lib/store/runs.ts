@@ -49,6 +49,7 @@ export const createRunsMethods = (ctx: StoreContext) => {
     input: JsonObject
     currentStepKey: string
     idempotencyKey?: string | null
+    metadata?: JsonObject
     traceContext?: string | null
   }) =>
     withStoreSpan(
@@ -67,6 +68,7 @@ export const createRunsMethods = (ctx: StoreContext) => {
           const traceContext = args.traceContext ?? getActiveTraceContext() ?? null
           const params = {
             ...args,
+            metadata: args.metadata ?? {},
             traceContext,
           }
 
@@ -352,6 +354,7 @@ export const createRunsMethods = (ctx: StoreContext) => {
               currentStepKey: attempt.stepKey,
               input: sourceRun.input,
               context: attempt.contextBefore,
+              metadata: sourceRun.metadata,
               traceContext: getActiveTraceContext() ?? null,
             },
             client
@@ -458,6 +461,7 @@ export const createRunsMethods = (ctx: StoreContext) => {
               priority: args.priority,
               currentStepKey: args.currentStepKey,
               input: args.input,
+              metadata: completedRun.metadata,
               traceContext: getActiveTraceContext() ?? null,
             },
             client

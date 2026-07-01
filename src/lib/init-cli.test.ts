@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, readFile } from "node:fs/promises"
+import { mkdtemp, readFile, symlink } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -41,5 +41,24 @@ describe("hippo init cli", () => {
     expect(workflowIndex).toContain("exampleWorkflow")
     expect(workflowFile).toContain('name: "example-delivery"')
     expect(readme).toContain("hippo init")
+
+    // Link node_modules from repo root to the scaffolded project to resolve dependencies locally
+    await symlink(
+      path.join(repoRoot, "node_modules"),
+      path.join(projectDir, "node_modules"),
+      "dir"
+    )
+
+    // Verify typecheck compiles successfully
+    await execFileAsync("npm", ["run", "typecheck"], { cwd: projectDir })
+
+    // Verify render script executes successfully and outputs the Mermaid graph
+    const { stdout: renderOutput } = await execFileAsync(
+      "npm",
+      ["run", "render:example"],
+      { cwd: projectDir }
+    )
+    expect(renderOutput).toContain("flowchart TD")
+    expect(renderOutput).toContain("classify_recipient")
   })
 })

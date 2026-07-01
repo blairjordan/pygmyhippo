@@ -11,6 +11,7 @@ INSERT INTO workflow_runs (
   idempotency_key,
   input,
   context,
+  metadata,
   trace_context
 ) VALUES (
   :parentRunId,
@@ -24,6 +25,7 @@ INSERT INTO workflow_runs (
   :idempotencyKey,
   :input,
   '{}'::jsonb,
+  :metadata,
   :traceContext
 )
 ON CONFLICT (definition_name, idempotency_key)
@@ -54,6 +56,7 @@ RETURNING
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   completed_at AS "completedAt",
+  metadata,
   trace_context AS "traceContext";
 
 /* @name GetRunById */
@@ -84,6 +87,7 @@ SELECT
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   completed_at AS "completedAt",
+  metadata,
   trace_context AS "traceContext"
 FROM workflow_runs
 WHERE id = :runId;
@@ -286,6 +290,7 @@ INSERT INTO workflow_runs (
   current_step_key,
   input,
   context,
+  metadata,
   trace_context
 ) VALUES (
   :branchedFromRunId,
@@ -299,6 +304,7 @@ INSERT INTO workflow_runs (
   :currentStepKey,
   :input,
   :context,
+  :metadata,
   :traceContext
 )
 RETURNING
@@ -328,6 +334,7 @@ RETURNING
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   completed_at AS "completedAt",
+  metadata,
   trace_context AS "traceContext";
 
 /* @name MarkRunSuperseded */
@@ -949,6 +956,7 @@ SELECT
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   completed_at AS "completedAt",
+  metadata,
   trace_context AS "traceContext"
 FROM workflow_runs
 WHERE id = :runId
@@ -1476,7 +1484,8 @@ SELECT
   available_at AS "availableAt",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
-  completed_at AS "completedAt"
+  completed_at AS "completedAt",
+  metadata
 FROM workflow_runs
 WHERE (:workflowName::text IS NULL OR definition_name = :workflowName)
   AND (:status::text IS NULL OR status::text = :status)
@@ -1815,6 +1824,7 @@ WITH existing_run AS (
     created_at AS "createdAt",
     updated_at AS "updatedAt",
     completed_at AS "completedAt",
+    metadata,
     trace_context AS "traceContext",
     FALSE AS inserted
   FROM workflow_runs
@@ -1833,6 +1843,7 @@ WITH existing_run AS (
     idempotency_key,
     input,
     context,
+    metadata,
     trace_context
   )
   SELECT
@@ -1847,6 +1858,7 @@ WITH existing_run AS (
     :idempotencyKey,
     :input,
     '{}'::jsonb,
+    :metadata,
     :traceContext
   WHERE NOT EXISTS (SELECT 1 FROM existing_run)
   ON CONFLICT (definition_name, idempotency_key) DO NOTHING
@@ -1877,6 +1889,7 @@ WITH existing_run AS (
     created_at AS "createdAt",
     updated_at AS "updatedAt",
     completed_at AS "completedAt",
+    metadata,
     trace_context AS "traceContext",
     TRUE AS inserted
 )
@@ -1974,6 +1987,7 @@ INSERT INTO workflow_runs (
   current_step_key,
   input,
   context,
+  metadata,
   trace_context
 ) VALUES (
   :continuedFromRunId,
@@ -1985,6 +1999,7 @@ INSERT INTO workflow_runs (
   :currentStepKey,
   :input,
   '{}'::jsonb,
+  :metadata,
   :traceContext
 )
 RETURNING
@@ -2014,6 +2029,7 @@ RETURNING
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   completed_at AS "completedAt",
+  metadata,
   trace_context AS "traceContext";
 
 /* @name ContinueAsNewSetResult */

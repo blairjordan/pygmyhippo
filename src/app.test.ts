@@ -49,6 +49,7 @@ const createRunRecord = (
   createdAt: new Date(),
   updatedAt: new Date(),
   completedAt: null,
+  metadata: {},
   ...overrides,
 })
 

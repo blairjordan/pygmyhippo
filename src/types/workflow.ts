@@ -43,6 +43,7 @@ export type WorkflowRunRecord = {
   createdAt: Date
   updatedAt: Date
   completedAt: Date | null
+  metadata: JsonObject
   traceContext?: string | null
 }
 

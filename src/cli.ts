@@ -155,15 +155,33 @@ export const createHippoCli = (inputDeps: Partial<CliDeps> = {}) => {
     .option("--status <status>", "Filter runs by status")
     .option("--workflow <name>", "Filter runs by workflow name")
     .option("--search <query>", "Search query for run ID, definition name or step key")
+    .option("--metadata <pairs...>", "Filter runs by metadata key=value pairs (e.g. env=production)")
     .action(
       async (options: {
         limit: string
         status?: string
         workflow?: string
         search?: string
+        metadata?: string[]
       }) => {
         try {
           await runStoreCommand(deps, async (store) => {
+            const metadataFilter: Record<string, string | number | boolean> = {}
+            if (options.metadata) {
+              for (const pair of options.metadata) {
+                const idx = pair.indexOf("=")
+                if (idx !== -1) {
+                  const key = pair.slice(0, idx).trim()
+                  const valStr = pair.slice(idx + 1).trim()
+                  let val: string | number | boolean = valStr
+                  if (valStr === "true") val = true
+                  else if (valStr === "false") val = false
+                  else if (!isNaN(Number(valStr)) && valStr !== "") val = Number(valStr)
+                  metadataFilter[key] = val
+                }
+              }
+            }
+
             const runs = await store.listRunsPaginated({
               limit: parseInt(options.limit, 10),
               ...(options.status
@@ -171,6 +189,9 @@ export const createHippoCli = (inputDeps: Partial<CliDeps> = {}) => {
                 : {}),
               ...(options.workflow ? { workflowName: options.workflow } : {}),
               ...(options.search ? { search: options.search } : {}),
+              ...(Object.keys(metadataFilter).length > 0
+                ? { metadata: metadataFilter }
+                : {}),
             })
 
             if (runs.length === 0) {

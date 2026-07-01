@@ -48,6 +48,7 @@ export const createWorkflowEngine = (args: {
     idempotencyKey?: string
     taskQueue?: string
     priority?: number
+    metadata?: JsonObject
   }) => {
     return tracer.withSpan(
       {
@@ -68,6 +69,7 @@ export const createWorkflowEngine = (args: {
           priority: input.priority ?? 0,
           input: input.payload,
           currentStepKey: definition.startAt,
+          metadata: input.metadata ?? {},
           ...(input.idempotencyKey === undefined
             ? {}
             : { idempotencyKey: input.idempotencyKey }),

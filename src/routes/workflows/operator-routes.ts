@@ -59,6 +59,9 @@ export const registerOperatorRoutes = (
             ...(query.taskQueue === undefined
               ? {}
               : { taskQueue: query.taskQueue }),
+            ...(query.metadata === undefined
+              ? {}
+              : { metadata: query.metadata }),
             ...(paged.afterUpdatedAt
               ? { afterUpdatedAt: paged.afterUpdatedAt }
               : {}),

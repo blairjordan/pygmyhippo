@@ -41,6 +41,7 @@ export type IRunRow = {
   createdAt: Date
   updatedAt: Date
   completedAt: Date | null
+  metadata?: JsonValue | null
   traceContext?: string | null
 }
 
@@ -143,6 +144,7 @@ export const mapRun = (row: IRunRow): WorkflowRunRecord => ({
   error: row.error,
   cancelRequestedAt: row.cancelRequestedAt ?? null,
   cancelMode: (row.cancelMode as WorkflowCancelMode | null | undefined) ?? null,
+  metadata: assertJsonObject(row.metadata ?? {}, "Run metadata must be a JSON object"),
   traceContext: row.traceContext ?? null,
 })
 

@@ -36,6 +36,7 @@ export const startRunBodySchema = z.object({
   payload: jsonObjectSchema.default({}),
   taskQueue: z.string().min(1).default("default"),
   priority: z.coerce.number().int().default(0),
+  metadata: jsonObjectSchema.optional(),
 })
 
 export const resumeBodySchema = z.object({
@@ -92,6 +93,18 @@ export const operatorRunsQuerySchema = z.object({
   workflowName: optionalQueryText,
   afterUpdatedAt: z.string().optional(),
   afterId: z.uuid().optional(),
+  metadata: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return undefined
+      try {
+        return JSON.parse(val) as Record<string, string | number | boolean>
+      } catch {
+        return undefined
+      }
+    })
+    .pipe(z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()),
 })
 
 export const stuckRunsQuerySchema = z.object({

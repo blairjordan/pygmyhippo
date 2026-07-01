@@ -42,6 +42,7 @@ describe("scheduler", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       completedAt: null,
+      metadata: {},
     }))
     const engine = {
       async cancelExternalSessionsForRun() {

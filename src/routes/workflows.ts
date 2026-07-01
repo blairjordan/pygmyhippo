@@ -119,6 +119,7 @@ export const createWorkflowRoutes = (args: {
           payload: body.payload,
           taskQueue: body.taskQueue,
           priority: body.priority,
+          metadata: body.metadata ?? {},
           ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         })
 

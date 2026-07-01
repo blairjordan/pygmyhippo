@@ -384,6 +384,7 @@ export const createStoreStub = () => {
         createdAt: now(),
         updatedAt: now(),
         completedAt: null,
+        metadata: run.metadata,
       }
       const completedRun: WorkflowRunRecord = {
         ...run,
@@ -1222,6 +1223,7 @@ export const createStoreStub = () => {
       input: JsonObject
       currentStepKey: string
       idempotencyKey?: string | null
+      metadata?: JsonObject
       traceContext?: string | null
     }) {
       if (args.idempotencyKey) {
@@ -1265,6 +1267,7 @@ export const createStoreStub = () => {
         createdAt: now(),
         updatedAt: now(),
         completedAt: null,
+        metadata: args.metadata ?? {},
       }
       runs.set(run.id, run)
       if (args.idempotencyKey) {

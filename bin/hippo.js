@@ -215,7 +215,13 @@ const copyRelativePath = async (relativePath, targetDir) => {
   await cp(
     path.join(repoRoot, relativePath),
     path.join(targetDir, relativePath),
-    { recursive: true }
+    {
+      recursive: true,
+      filter: (src) => {
+        const basename = path.basename(src)
+        return !basename.includes(".test.") && !basename.includes(".spec.")
+      },
+    }
   )
 }
 
@@ -262,6 +268,7 @@ const scaffoldProject = async (projectName, targetDir) => {
     "src/types",
     "src/sql",
     "src/queries",
+    "src/views",
     "src/app.ts",
     "src/index.ts",
     "scripts/hippo-dev.ts",

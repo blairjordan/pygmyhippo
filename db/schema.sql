@@ -740,6 +740,7 @@ CREATE TABLE public.workflow_runs (
     completed_at timestamp with time zone,
     idempotency_key text,
     trace_context text,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT workflow_runs_cancel_mode_check CHECK ((cancel_mode = ANY (ARRAY['graceful'::text, 'hard'::text])))
 );
 
@@ -2244,6 +2245,13 @@ ALTER TABLE ONLY public.workflow_waits
 
 ALTER TABLE ONLY public.workflow_waits
     ADD CONSTRAINT workflow_waits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_workflow_runs_metadata; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_metadata ON public.workflow_runs USING gin (metadata);
 
 
 --
@@ -4318,4 +4326,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260628223000'),
     ('20260629100000'),
     ('20260629103000'),
-    ('20260629224100');
+    ('20260629224100'),
+    ('20260701132429');

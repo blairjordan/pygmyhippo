@@ -118,6 +118,7 @@ export const createOperatorQueries = (ctx: StoreContext) => {
     taskQueue?: string
     afterUpdatedAt?: Date
     afterId?: string
+    metadata?: Record<string, string | number | boolean>
   }) => {
     const conditions: string[] = []
     const values: unknown[] = []
@@ -149,6 +150,11 @@ export const createOperatorQueries = (ctx: StoreContext) => {
     if (args.taskQueue) {
       values.push(args.taskQueue)
       conditions.push(`task_queue = ${placeholder()}::text`)
+    }
+
+    if (args.metadata && Object.keys(args.metadata).length > 0) {
+      values.push(JSON.stringify(args.metadata))
+      conditions.push(`metadata @> ${placeholder()}::jsonb`)
     }
 
     if (args.afterUpdatedAt && args.afterId) {
@@ -190,7 +196,8 @@ export const createOperatorQueries = (ctx: StoreContext) => {
         available_at AS "availableAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
-        completed_at AS "completedAt"
+        completed_at AS "completedAt",
+        metadata
       FROM workflow_runs
       ${where}
       ORDER BY updated_at DESC, id DESC

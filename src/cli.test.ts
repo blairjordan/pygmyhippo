@@ -35,6 +35,7 @@ const testRun: WorkflowRunRecord = {
   createdAt: new Date("2024-01-01T00:00:00.000Z"),
   updatedAt: new Date("2024-01-01T00:00:01.000Z"),
   completedAt: null,
+  metadata: {},
   traceContext: null,
 }
 
