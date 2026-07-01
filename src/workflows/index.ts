@@ -1,3 +1,3 @@
-import { demoWorkflow } from "./demo.js"
+import { demoWorkflow, demoChildWorkflow, demoParentWorkflow } from "./demo.js"
 
-export const workflows = [demoWorkflow]
+export const workflows = [demoWorkflow, demoChildWorkflow, demoParentWorkflow]

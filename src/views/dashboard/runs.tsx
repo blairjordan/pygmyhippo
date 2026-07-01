@@ -185,8 +185,170 @@ export const renderRunsIndexDocument = (args: {
   })
 }
 
+export const renderTraceTimeline = (
+  attempts: WorkflowStepAttemptRecord[] | undefined,
+  run: WorkflowRunRecord | null,
+  lineage: WorkflowRunRecord[] | undefined
+): string => {
+  if (!attempts || attempts.length === 0 || !run) {
+    return `
+      <article class="card trace-card">
+        <div class="card-header">
+          <h3 class="card-title">Trace Timeline</h3>
+          <p class="card-description">No timeline data available for this run yet.</p>
+        </div>
+      </article>
+    `
+  }
+
+  // Filter child runs of this run
+  const childRuns = lineage ? lineage.filter(r => r.parentRunId === run.id) : []
+
+  const timelineStart = run.createdAt.getTime()
+  // Determine overall start/end boundary including child runs
+  const timelineEnd = run.completedAt
+    ? run.completedAt.getTime()
+    : Math.max(
+        new Date().getTime(),
+        ...attempts.map((a) => (a.completedAt || new Date()).getTime()),
+        ...childRuns.map((c) => (c.completedAt || new Date()).getTime())
+      )
+
+  const totalDuration = Math.max(1, timelineEnd - timelineStart)
+
+  const rowsHtmlList: string[] = []
+
+  for (const attempt of attempts) {
+    const startMs = attempt.startedAt.getTime()
+    const endMs = (attempt.completedAt || new Date()).getTime()
+    const duration = Math.max(0, endMs - startMs)
+    
+    const startOffset = Math.max(0, Math.min(100, ((startMs - timelineStart) / totalDuration) * 100))
+    let width = Math.max(0.5, (duration / totalDuration) * 100)
+    if (startOffset + width > 100) {
+      width = 100 - startOffset
+    }
+
+    let statusClass = "trace-bar-queued"
+    if (attempt.status === "completed") {
+      statusClass = "trace-bar-completed"
+    } else if (attempt.status === "failed") {
+      statusClass = "trace-bar-failed"
+    } else if (attempt.status === "started") {
+      statusClass = "trace-bar-running"
+    }
+
+    const durationText = duration < 1000 ? `${duration}ms` : `${(duration / 1000).toFixed(2)}s`
+    const startedStr = formatDateTime(attempt.startedAt)
+    const endedStr = attempt.completedAt ? formatDateTime(attempt.completedAt) : "Running..."
+    const tooltip = escapeHtml(
+      `Step: ${attempt.stepKey}\nStatus: ${attempt.status}\nDuration: ${durationText}\nStarted: ${startedStr}\nEnded: ${endedStr}`
+    )
+
+    // Find children spawned by this specific step
+    const stepChildren = childRuns.filter(c => c.parentStepKey === attempt.stepKey)
+    const hasChildren = stepChildren.length > 0
+
+    const toggleHtml = hasChildren
+      ? `<button class="trace-toggle-btn" onclick="toggleTraceChildren(this, '${escapeHtml(attempt.stepKey)}')">▼</button>`
+      : `<span class="trace-toggle-spacer"></span>`
+
+    // Parent row
+    rowsHtmlList.push(`
+      <div class="trace-row">
+        <div class="trace-label" title="${escapeHtml(attempt.stepKey)}">
+          ${toggleHtml}
+          ${escapeHtml(attempt.stepKey)} <span style="color: hsl(var(--muted-foreground)); font-size: 0.72rem;">(att ${attempt.attempt})</span>
+        </div>
+        <div class="trace-track">
+          <div class="trace-bar ${statusClass}" 
+               style="left: ${startOffset.toFixed(2)}%; width: ${width.toFixed(2)}%;"
+               title="${tooltip}">
+            <span class="trace-bar-text">${escapeHtml(durationText)}</span>
+          </div>
+        </div>
+      </div>
+    `)
+
+    // Render child rows right below the parent row
+    for (const child of stepChildren) {
+      const cStartMs = child.createdAt.getTime()
+      const cEndMs = (child.completedAt || new Date()).getTime()
+      const cDuration = Math.max(0, cEndMs - cStartMs)
+      
+      const cStartOffset = Math.max(0, Math.min(100, ((cStartMs - timelineStart) / totalDuration) * 100))
+      let cWidth = Math.max(0.5, (cDuration / totalDuration) * 100)
+      if (cStartOffset + cWidth > 100) {
+        cWidth = 100 - cStartOffset
+      }
+
+      let cStatusClass = "trace-bar-queued"
+      if (child.status === "completed") {
+        cStatusClass = "trace-bar-completed"
+      } else if (child.status === "failed") {
+        cStatusClass = "trace-bar-failed"
+      } else if (child.status === "running") {
+        cStatusClass = "trace-bar-running"
+      }
+
+      const cDurationText = cDuration < 1000 ? `${cDuration}ms` : `${(cDuration / 1000).toFixed(2)}s`
+      const cStartedStr = formatDateTime(child.createdAt)
+      const cEndedStr = child.completedAt ? formatDateTime(child.completedAt) : "Running..."
+      const cTooltip = escapeHtml(
+        `Child Run: ${child.definitionName}\nStatus: ${child.status}\nDuration: ${cDurationText}\nStarted: ${cStartedStr}\nEnded: ${cEndedStr}`
+      )
+
+      rowsHtmlList.push(`
+        <div class="trace-row trace-child-row trace-child-of-${escapeHtml(attempt.stepKey)}">
+          <div class="trace-label" style="padding-left: 0.5rem;" title="${escapeHtml(child.definitionName)}">
+            <span class="trace-tree-branch">├─</span>
+            <a class="trace-child-link" href="/dashboard/runs/${child.id}">${escapeHtml(child.definitionName)}</a>
+          </div>
+          <div class="trace-track">
+            <div class="trace-bar ${cStatusClass}" 
+                 style="left: ${cStartOffset.toFixed(2)}%; width: ${cWidth.toFixed(2)}%;"
+                 title="${cTooltip}">
+              <span class="trace-bar-text">${escapeHtml(cDurationText)}</span>
+            </div>
+          </div>
+        </div>
+      `)
+    }
+  }
+
+  const rowsHtml = rowsHtmlList.join("")
+
+  const totalDurationText =
+    totalDuration < 1000 ? `${totalDuration}ms` : `${(totalDuration / 1000).toFixed(2)}s`
+
+  return `
+    <article class="card trace-card">
+      <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 0.75rem;">
+        <div>
+          <h3 class="card-title">Trace Timeline</h3>
+          <p class="card-description">Chronological execution flow and step durations.</p>
+        </div>
+        <div style="font-family: ui-monospace, monospace; font-size: 0.8125rem; font-weight: 600; color: hsl(var(--foreground));">
+          Total: ${escapeHtml(totalDurationText)}
+        </div>
+      </div>
+      <div class="card-content" style="padding: 0 1.5rem 1.5rem;">
+        <div class="trace-chart">
+          ${rowsHtml}
+        </div>
+        <div class="trace-time-scale">
+          <span>0s</span>
+          <span>${escapeHtml(totalDurationText)}</span>
+        </div>
+      </div>
+    </article>
+  `
+}
+
 export const renderRunDetailDocument = (args: {
   attempts: string
+  attemptsList?: WorkflowStepAttemptRecord[]
+  lineageList?: WorkflowRunRecord[]
   events: string
   lastEventId: number
   lineage: string
@@ -362,7 +524,148 @@ export const renderRunDetailDocument = (args: {
         font-size: 0.75rem;
         border-radius: 0.25rem;
         line-height: 1.25rem;
-      }`
+      }
+
+      /* Trace Timeline Custom Styles */
+      .trace-card {
+        margin-bottom: 1.5rem;
+        width: 100%;
+      }
+      .trace-chart {
+        display: flex;
+        flex-direction: column;
+        gap: 0.625rem;
+        padding: 0.5rem 0;
+      }
+      .trace-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.8125rem;
+        border-bottom: 1px solid hsl(var(--border) / 0.3);
+        padding-bottom: 0.625rem;
+      }
+      .trace-row:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+      .trace-label {
+        width: 180px;
+        flex-shrink: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+      }
+      .trace-track {
+        flex-grow: 1;
+        height: 1.75rem;
+        position: relative;
+        background: hsl(var(--muted) / 0.4);
+        border-radius: calc(var(--radius) - 2px);
+        overflow: hidden;
+        border: 1px solid hsl(var(--border) / 0.5);
+      }
+      .trace-bar {
+        position: absolute;
+        top: 0.125rem;
+        height: 1.5rem;
+        border-radius: calc(var(--radius) - 4px);
+        display: flex;
+        align-items: center;
+        padding: 0 0.625rem;
+        color: white;
+        font-size: 0.72rem;
+        font-weight: 600;
+        min-width: 48px;
+        box-sizing: border-box;
+        transition: transform 0.15s ease, filter 0.15s ease;
+        cursor: pointer;
+      }
+      .trace-bar:hover {
+        filter: brightness(1.1);
+        transform: scaleY(1.05);
+      }
+      .trace-bar-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .trace-bar-completed {
+        background: hsl(var(--success));
+      }
+      .trace-bar-failed {
+        background: hsl(var(--destructive));
+      }
+      .trace-bar-running {
+        background: hsl(var(--info));
+        animation: trace-pulse 2s infinite ease-in-out;
+      }
+      .trace-bar-queued {
+        background: hsl(var(--muted-foreground));
+      }
+      @keyframes trace-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.65; }
+      }
+      .trace-time-scale {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 0.625rem;
+        font-size: 0.75rem;
+        color: hsl(var(--muted-foreground));
+        font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+        border-top: 1px dashed hsl(var(--border));
+        padding-top: 0.625rem;
+      }
+      .trace-toggle-btn {
+        background: none;
+        border: none;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        padding: 0;
+        font-size: 0.65rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 2px;
+        transition: background 0.1s, color 0.1s;
+        margin-right: 0.25rem;
+        vertical-align: middle;
+      }
+      .trace-toggle-btn:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .trace-toggle-spacer {
+        display: inline-block;
+        width: 1.35rem;
+      }
+      .trace-tree-branch {
+        color: hsl(var(--muted-foreground) / 0.6);
+        font-family: ui-monospace, monospace;
+        margin-right: 0.25rem;
+        margin-left: 0.25rem;
+      }
+      .trace-child-link {
+        color: hsl(var(--primary));
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .trace-child-link:hover {
+        text-decoration: underline;
+      }
+      }
+      .trace-child-row {
+        background: hsl(var(--muted) / 0.08);
+        margin-left: 1.25rem;
+        border-left: 2px solid hsl(var(--border) / 0.4);
+      }
+    `
 
   const statusTone = args.run?.status && args.run.status in statusToneByRun
     ? statusToneByRun[args.run.status as keyof typeof statusToneByRun]
@@ -377,6 +680,7 @@ export const renderRunDetailDocument = (args: {
       </div>
       <span class="badge ${statusTone}">${escapeHtml(args.run?.status ?? "missing")}</span>
     </div>
+    ${renderTraceTimeline(args.attemptsList, args.run, args.lineageList)}
     <section class="grid">
       <article class="card">
         <div class="card-header">
@@ -434,6 +738,8 @@ export const renderRunDetailDocument = (args: {
         const source = new EventSource("/v1/runs/${args.run?.id ?? ""}/stream?afterEventId=${String(args.lastEventId)}")
         source.onmessage = (event) => {
           const payload = JSON.parse(event.data)
+          
+          // Append to event log
           const item = document.createElement("article")
           item.className = "entry"
           const title = document.createElement("strong")
@@ -449,6 +755,18 @@ export const renderRunDetailDocument = (args: {
           eventList?.appendChild(item)
           if (typeof window.hippoHighlightAllJson === "function") {
             window.hippoHighlightAllJson(item)
+          }
+
+          // Hot-reload components when important updates happen
+          if (
+            payload.eventType === "run.completed" ||
+            payload.eventType === "run.canceled" ||
+            payload.eventType === "step.completed" ||
+            payload.eventType === "step.failed" ||
+            payload.eventType === "compensation.completed" ||
+            payload.eventType === "compensation.failed"
+          ) {
+            setTimeout(() => { window.location.reload() }, 300)
           }
         }
         source.onerror = () => { source.close() }
@@ -490,6 +808,14 @@ export const renderRunDetailDocument = (args: {
           const errText = await res.text()
           alert("Failed to " + mode + ": " + errText)
         }
+      }
+
+      window.toggleTraceChildren = (btn, stepKey) => {
+        const isCollapsed = btn.classList.toggle("collapsed");
+        btn.textContent = isCollapsed ? "▶" : "▼";
+        document.querySelectorAll(".trace-child-of-" + stepKey).forEach(row => {
+          row.style.display = isCollapsed ? "none" : "flex";
+        });
       }
     </script>
   `

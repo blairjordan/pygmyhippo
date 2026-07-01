@@ -291,7 +291,7 @@ export const renderWorkflowAsMermaid = (
     }
 
     if (step.kind === "fanOut") {
-      lines.push(`  ${nodeId}[\\\\"${label}"//]`)
+      lines.push(`  ${nodeId}{{"${label}"}}`)
       continue
     }
 

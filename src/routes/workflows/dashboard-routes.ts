@@ -217,12 +217,21 @@ export const registerDashboardRoutes = (
       run: async () => {
         const params = runIdParamsSchema.parse(request.params)
         const run = await getExistingRun(app, args.store, params.runId)
-        const [events, attempts, lineage, usage] = await Promise.all([
+         const [events, attempts, lineageParentFork, childRuns, usage] = await Promise.all([
           args.store.getRunEvents(run.id),
           args.store.getRunAttempts(run.id),
           args.store.listRunLineage(run.id),
+          args.store.listChildRuns(run.id),
           args.store.getRunUsage(run.id),
         ])
+        const lineageMap = new Map<string, typeof lineageParentFork[number]>()
+        for (const r of lineageParentFork) {
+          lineageMap.set(r.id, r)
+        }
+        for (const r of childRuns) {
+          lineageMap.set(r.id, r)
+        }
+        const lineage = Array.from(lineageMap.values())
         const workflow = args.engine.getWorkflow(
           run.definitionName,
           run.definitionVersion
@@ -241,6 +250,8 @@ export const registerDashboardRoutes = (
                   )
                   .join("")
               : '<div class="entry">No attempts recorded yet.</div>',
+          attemptsList: attempts,
+          lineageList: lineage,
           events:
             events.length > 0
               ? events.map(renderEventCard).join("")

@@ -45,7 +45,7 @@ describe("workflow rendering", () => {
       })
     )
 
-    expect(output).toContain('(fanOut)"//]')
+    expect(output).toContain('(fanOut)"}}')
   })
 
   it("renders human task steps with a dedicated Mermaid node shape", () => {

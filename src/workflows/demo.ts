@@ -6,6 +6,8 @@ import {
   sleepStep,
   taskStep,
   waitStep,
+  childStep,
+  fanOut,
 } from "../lib/workflow-definition.js"
 
 const createCorrelationKey = (value: string) =>
@@ -132,5 +134,78 @@ export const demoWorkflow = defineWorkflow({
     done: endStep({
       label: "Completed",
     }),
+  },
+})
+
+export const demoChildWorkflow = defineWorkflow({
+  name: "demo-child-work",
+  version: 1,
+  title: "Demo Child Task",
+  startAt: "process-subtask",
+  steps: {
+    "process-subtask": taskStep({
+      kind: "task",
+      next: "done",
+      run: async ({ input }) => {
+        const duration = typeof input?.delay === "number" ? input.delay : 1000
+        await new Promise((r) => setTimeout(r, duration))
+        return {
+          patch: { processed: true, delayUsed: duration },
+        }
+      },
+    }),
+    done: endStep(),
+  },
+})
+
+export const demoParentWorkflow = defineWorkflow({
+  name: "demo-parent-flow",
+  version: 1,
+  title: "Demo Parent Workflow",
+  startAt: "prepare",
+  steps: {
+    prepare: taskStep({
+      kind: "task",
+      next: "spawn-child",
+      run: async () => {
+        await new Promise((r) => setTimeout(r, 800))
+        return {
+          patch: { initialized: true },
+        }
+      },
+    }),
+    "spawn-child": childStep({
+      kind: "child",
+      workflow: "demo-child-work",
+      next: "fan-out-children",
+      input: () => ({
+        delay: 1500,
+      }),
+      resume: (_context, childRun) => ({
+        patch: {
+          singleChildStatus: childRun.status,
+        },
+      }),
+    }),
+    "fan-out-children": fanOut({
+      next: "cooldown",
+      failureMode: "collect",
+      children: () => [
+        { workflow: "demo-child-work", input: { delay: 1000 } },
+        { workflow: "demo-child-work", input: { delay: 2000 } },
+        { workflow: "demo-child-work", input: { delay: 1500 } },
+      ],
+      resume: (_context, childRuns) => ({
+        patch: {
+          childStatuses: childRuns.map((r) => r.status),
+        },
+      }),
+    }),
+    cooldown: sleepStep({
+      kind: "sleep",
+      next: "done",
+      until: 1000,
+    }),
+    done: endStep(),
   },
 })
