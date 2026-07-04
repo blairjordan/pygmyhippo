@@ -1,6 +1,6 @@
 {
   "name": "pygmyhippo-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "description": "Hippo Fastify app, worker loop, recovery loop, and server bootstrap helpers",
