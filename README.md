@@ -1,8 +1,8 @@
-# 🦛 Hippo
+# 🦛 PygmyHippo
 
 **Postgres-only durable workflow engine for AI agent harnesses.**
 
-One database. No Redis, no Elasticsearch, no Kafka, no separate control plane — just Postgres and a Hippo app process. Agent harnesses are workflow engines wearing a trench coat: phase transitions, tool-budget caps, human-in-the-loop approvals, retries on flaky LLM calls, and rewinding past a hallucination are all workflow problems. Hippo handles them.
+One database. No Redis, no Elasticsearch, no Kafka, no separate control plane — just Postgres and a PygmyHippo app process. Agent harnesses are workflow engines wearing a trench coat: phase transitions, tool-budget caps, human-in-the-loop approvals, retries on flaky LLM calls, and rewinding past a hallucination are all workflow problems. PygmyHippo handles them.
 
 ## Features
 
@@ -64,7 +64,7 @@ curl -X POST \
 | [`pygmyhippo-sdk`](https://www.npmjs.com/package/pygmyhippo-sdk) | `defineWorkflow`, step helpers, types |
 | [`pygmyhippo-core`](https://www.npmjs.com/package/pygmyhippo-core) | Engine, store, tracer, migrations |
 | [`pygmyhippo-server`](https://www.npmjs.com/package/pygmyhippo-server) | Fastify app, worker loop, recovery, scheduler |
-| [`pygmyhippo-cli`](https://www.npmjs.com/package/pygmyhippo-cli) | `hippo init` scaffolder |
+| [`pygmyhippo-cli`](https://www.npmjs.com/package/pygmyhippo-cli) | PygmyHippo CLI with the `hippo init` scaffolder |
 
 ```bash
 npm install pygmyhippo-sdk pygmyhippo-core pygmyhippo-server
@@ -76,9 +76,9 @@ import { createHippoTracer, createWorkflowEngine, createWorkflowStore } from "py
 import { createApp, startWorkerLoop } from "pygmyhippo-server"
 ```
 
-## Hippo vs the rest
+## PygmyHippo vs the rest
 
-| | **Hippo** | Temporal | Trigger.dev v4 | LangGraph Platform | Hatchet | Inngest | Restate | DBOS |
+| | **PygmyHippo** | Temporal | Trigger.dev v4 | LangGraph Platform | Hatchet | Inngest | Restate | DBOS |
 |---|---|---|---|---|---|---|---|---|
 | Self-host pricing | **MIT, fully free** | MIT, fully free | Apache 2.0, fully free | **Enterprise tier only** for prod self-host | MIT, fully free | SSPL, free self-host | **BUSL — prod self-host needs paid licence** | Transact MIT; **Conductor paid for prod** |
 | Stateful services | **Postgres** | Postgres/Cassandra + Elasticsearch | Postgres + Redis + ClickHouse + object store | Postgres + Redis | Postgres (+ RabbitMQ above ~100 rps) | Postgres + Redis | None (embedded RocksDB) | Postgres |
@@ -86,7 +86,7 @@ import { createApp, startWorkerLoop } from "pygmyhippo-server"
 | Process model | Server | Server cluster | Server cluster | Server | Server | Server | Single binary | **Library in your app** |
 | Language SDKs | TS | Go, Java, TS, Python, .NET, Ruby, PHP | TS (Python via bridge) | Python, JS | TS, Python, Go, Ruby | TS, Python, Go | TS, Java/Kotlin, Python, Go, Rust | TS, Python, Go, Java |
 | Built-in operator UI | ✅ | Separate svc | ✅ | LangGraph Studio | ✅ | ✅ | ✅ | Paid (Conductor) |
-| Same-tx business writes | ✅ *when app shares Hippo's Postgres* | ❌ | ❌ | ❌ | ❌ | ❌ | Partial (virtual objects) | ✅ *native — runs in-process* |
+| Same-tx business writes | ✅ *when app shares PygmyHippo's Postgres* | ❌ | ❌ | ❌ | ❌ | ❌ | Partial (virtual objects) | ✅ *native — runs in-process* |
 | Rewind / fork from prior attempt | ✅ | Reset | Replay | Checkpoint replay | Replay | Replay | Journal replay | ✅ (Time Travel) |
 | Run-scoped KV scratchpad | ✅ | ❌ | ❌ | Graph state | ❌ | ❌ | ✅ | Partial |
 | Agent budgets / SSE streaming | ✅ | Generic | ✅ (Realtime/AI) | Graph-native | Generic | AgentKit | Partial | Limited |
@@ -175,7 +175,7 @@ npm run render:demo
 
 ## Tracing
 
-`createHippoTracer()` emits nested spans across the runtime. To export, register your own OpenTelemetry SDK in the host process before booting Hippo.
+`createHippoTracer()` emits nested spans across the runtime. To export, register your own OpenTelemetry SDK in the host process before booting PygmyHippo.
 
 ## Testing
 
