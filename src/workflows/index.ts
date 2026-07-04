@@ -1,3 +1,15 @@
-import { demoWorkflow, demoChildWorkflow, demoParentWorkflow } from "./demo.js"
+import {
+  agentDevPipelineWorkflow,
+  agentSpecialistWorkflow,
+  demoWorkflow,
+  demoChildWorkflow,
+  demoParentWorkflow,
+} from "./demo.js"
 
-export const workflows = [demoWorkflow, demoChildWorkflow, demoParentWorkflow]
+export const workflows = [
+  demoWorkflow,
+  demoChildWorkflow,
+  demoParentWorkflow,
+  agentSpecialistWorkflow,
+  agentDevPipelineWorkflow,
+]

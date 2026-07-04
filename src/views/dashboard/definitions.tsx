@@ -74,7 +74,6 @@ export const renderDefinitionDetailDocument = (args: {
       </div>
       <div class="row">
         <a class="btn btn-outline btn-sm" href="/dashboard/runs?definition=${encodeURIComponent(args.workflow.name)}">All runs</a>
-        <a class="btn btn-outline btn-sm" href="/v1/workflows/${encodeURIComponent(args.workflow.name)}/render">Source</a>
       </div>
     </div>
     <article class="card">

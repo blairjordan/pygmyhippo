@@ -13,6 +13,11 @@ import {
 const createCorrelationKey = (value: string) =>
   createHash("sha256").update(value).digest("hex").slice(0, 24)
 
+const delay = (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs)
+  })
+
 export const demoWorkflow = defineWorkflow({
   name: "demo-delivery",
   version: 1,
@@ -207,5 +212,155 @@ export const demoParentWorkflow = defineWorkflow({
       until: 1000,
     }),
     done: endStep(),
+  },
+})
+
+export const agentSpecialistWorkflow = defineWorkflow({
+  name: "agent-specialist-work",
+  version: 1,
+  title: "Agent Specialist Work",
+  startAt: "run-specialist",
+  steps: {
+    "run-specialist": taskStep({
+      kind: "task",
+      label: "Run specialist agent",
+      next: "done",
+      run: async ({ input }) => {
+        const role = typeof input.role === "string" ? input.role : "agent"
+        const duration = typeof input.durationMs === "number" ? input.durationMs : 900
+
+        await delay(duration)
+
+        return {
+          patch: {
+            role,
+            durationMs: duration,
+            tokensUsed: Math.round(duration * 3.4),
+          },
+          output: {
+            role,
+            summary: `${role} completed its review`,
+          },
+        }
+      },
+    }),
+    done: endStep({
+      label: "Specialist complete",
+    }),
+  },
+})
+
+export const agentDevPipelineWorkflow = defineWorkflow({
+  name: "agent-dev-pipeline",
+  version: 1,
+  title: "Agent-driven software development pipeline",
+  startAt: "intake-issue",
+  steps: {
+    "intake-issue": taskStep({
+      kind: "task",
+      label: "Intake issue and repo context",
+      next: "plan-implementation",
+      run: async ({ input }) => {
+        await delay(650)
+
+        return {
+          patch: {
+            issue: typeof input.issue === "string" ? input.issue : "Ship agent workflow demo",
+            repo: typeof input.repo === "string" ? input.repo : "pygmyhippo",
+            risk: "medium",
+          },
+          output: {
+            filesScanned: 42,
+            relevantModules: ["workflow-engine", "dashboard", "cli"],
+          },
+        }
+      },
+    }),
+    "plan-implementation": childStep({
+      kind: "child",
+      label: "Planner agent drafts implementation plan",
+      workflow: "agent-specialist-work",
+      next: "parallel-agent-review",
+      input: () => ({
+        role: "planner-agent",
+        durationMs: 1200,
+      }),
+      resume: (_context, childRun) => ({
+        patch: {
+          planRunId: childRun.id,
+          planStatus: childRun.status,
+        },
+      }),
+    }),
+    "parallel-agent-review": fanOut({
+      label: "Run coding, test, and security agents",
+      next: "synthesize-patch",
+      failureMode: "collect",
+      children: () => [
+        {
+          workflow: "agent-specialist-work",
+          input: { role: "coding-agent", durationMs: 1800 },
+        },
+        {
+          workflow: "agent-specialist-work",
+          input: { role: "test-agent", durationMs: 1400 },
+        },
+        {
+          workflow: "agent-specialist-work",
+          input: { role: "security-agent", durationMs: 1050 },
+        },
+      ],
+      resume: (_context, childRuns) => ({
+        patch: {
+          specialistStatuses: childRuns.map((run) => ({
+            workflow: run.definitionName,
+            status: run.status,
+          })),
+        },
+      }),
+    }),
+    "synthesize-patch": taskStep({
+      kind: "task",
+      label: "Synthesize patch and PR notes",
+      next: "ci-gate",
+      run: async ({ context }) => {
+        await delay(900)
+
+        return {
+          patch: {
+            pullRequest: "#128",
+            changedFiles: 7,
+            specialistStatuses: context.specialistStatuses ?? null,
+          },
+          output: {
+            diffSummary: "Workflow, dashboard, and README updates prepared",
+          },
+        }
+      },
+    }),
+    "ci-gate": sleepStep({
+      kind: "sleep",
+      label: "Wait for CI signal window",
+      next: "release-notes",
+      until: 1200,
+    }),
+    "release-notes": taskStep({
+      kind: "task",
+      label: "Generate release notes",
+      next: "done",
+      run: async () => {
+        await delay(450)
+
+        return {
+          patch: {
+            releaseNotesReady: true,
+            publishCandidate: "0.1.2",
+          },
+        }
+      },
+    }),
+    done: endStep({
+      label: "Ready for human merge",
+    }),
   },
 })

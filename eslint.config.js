@@ -42,6 +42,13 @@ export default [
     },
   },
   {
-    ignores: ["dist/**", "**/dist/**", "node_modules/**", "src/queries/**", "examples/**"],
+    ignores: [
+      "dist/**",
+      "**/dist/**",
+      "node_modules/**",
+      "src/.reload-*/**",
+      "src/queries/**",
+      "examples/**",
+    ],
   },
 ]

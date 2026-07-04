@@ -400,7 +400,7 @@ describe("app routes", () => {
     expect(definitionResponse.headers["content-type"]).toContain("text/html")
     expect(definitionResponse.body).toContain('class="mermaid"')
     expect(definitionResponse.body).toContain("data-mount-id")
-    expect(definitionResponse.body).toContain('/v1/workflows/demo-delivery/render')
+    expect(definitionResponse.body).toContain('data-tab-trigger="source"')
     expect(definitionResponse.body).toContain("hippo-dashboard-theme")
     expect(definitionResponse.body).toContain("cdn.jsdelivr.net/npm/mermaid")
   })

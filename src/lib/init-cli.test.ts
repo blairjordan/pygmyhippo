@@ -24,6 +24,11 @@ describe("hippo init cli", () => {
       scripts: Record<string, string>
       dependencies: Record<string, string>
     }
+    const rootPackageJson = JSON.parse(
+      await readFile(path.join(repoRoot, "package.json"), "utf8")
+    ) as {
+      version: string
+    }
     const workflowIndex = await readFile(
       path.join(projectDir, "src/workflows/index.ts"),
       "utf8"
@@ -51,10 +56,10 @@ describe("hippo init cli", () => {
     expect(packageJson.scripts["dev"]).toBeDefined()
     expect(packageJson.scripts["build"]).toBeDefined()
     expect(packageJson.dependencies).toMatchObject({
-      "pygmyhippo-core": "0.1.0",
-      "pygmyhippo-sdk": "0.1.0",
-      "pygmyhippo-server": "0.1.0",
-      "pygmyhippo-cli": "0.1.0",
+      "pygmyhippo-core": rootPackageJson.version,
+      "pygmyhippo-sdk": rootPackageJson.version,
+      "pygmyhippo-server": rootPackageJson.version,
+      "pygmyhippo-cli": rootPackageJson.version,
     })
 
     expect(workflowIndex).toContain("exampleWorkflow")

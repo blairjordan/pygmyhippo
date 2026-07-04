@@ -25,6 +25,16 @@ One database. No Redis, no Elasticsearch, no Kafka, no separate control plane â€
 - **Partitioned history:** `workflow_step_attempts` and `workflow_events` are hash-partitioned by `run_id`.
 - **Built-in dashboard:** Mermaid topology, clickable attempts, and live event tails ship in-process.
 
+## Dashboard Preview
+
+Agent-driven software development workflow topology:
+
+![Agent-driven workflow topology](docs/assets/agent-dev-pipeline-workflow.png)
+
+Completed run detail with live trace timeline, child-agent fan-out, context, attempts, and operator actions:
+
+![Agent-driven workflow trace timeline](docs/assets/agent-dev-pipeline-dashboard.png)
+
 ## Quickstart
 
 ```bash
