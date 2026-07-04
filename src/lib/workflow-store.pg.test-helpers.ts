@@ -8,7 +8,7 @@ import { trace, propagation, context } from "@opentelemetry/api"
 import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks"
 import { W3CTraceContextPropagator } from "@opentelemetry/core"
 import { BasicTracerProvider, SimpleSpanProcessor, InMemorySpanExporter } from "@opentelemetry/sdk-trace-base"
-import { createWorkflowEngine } from "./workflow-engine.js"
+import type { createWorkflowEngine } from "./workflow-engine.js"
 import { createWorkflowStore } from "./workflow-store.js"
 
 export const testDatabaseUrl = process.env.HIPPO_PG_TEST_URL

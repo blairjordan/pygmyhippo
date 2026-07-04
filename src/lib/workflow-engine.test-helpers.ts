@@ -1,8 +1,7 @@
-import { vi } from "vitest"
 import { getFanOutJoinState, isFanOutWaitPayload } from "./engine/fan-out.js"
 import { isHumanTaskWaitPayload } from "./engine/human-task.js"
-import { createMetrics } from "./metrics.js"
-import { createWorkflowEngine } from "./workflow-engine.js"
+import type { createMetrics } from "./metrics.js"
+import type { createWorkflowEngine } from "./workflow-engine.js"
 import type { JsonObject, JsonValue } from "../types/json.js"
 import type {
   SignalRecord,

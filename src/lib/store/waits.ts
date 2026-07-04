@@ -1,10 +1,8 @@
-import type { PoolClient } from "pg"
 import type { StoreContext } from "./context.js"
 import type { JsonValue, JsonObject } from "../../types/json.js"
 import type {
   WorkflowWaitRecord,
   WorkflowRunRecord,
-  WorkflowCancelMode,
 } from "../../types/workflow.js"
 import {
   openWait as openWaitQuery,
@@ -16,7 +14,6 @@ import {
   recordExternalSessionEvent as recordExternalSessionEventQuery,
   recordExternalHeartbeat as recordExternalHeartbeatQuery,
   listOpenExternalSessions as listOpenExternalSessionsQuery,
-  wakeParentForChild as wakeParentForChildQuery,
   getOpenWaitForUpdate as getOpenWaitForUpdateQuery,
   getRunByIdForUpdate as getRunByIdForUpdateQuery,
   updateWaitStatus as updateWaitStatusQuery,
@@ -454,7 +451,7 @@ export const createWaitsMethods = (ctx: StoreContext) => {
       },
       async () => {
         const rows = await listOpenExternalSessionsQuery.run({ runId }, db)
-        return rows.map((row: any) => ({
+        return rows.map((row) => ({
           stepKey: row.stepKey,
           externalSessionId: row.externalSessionId,
           externalSessionKind: row.externalSessionKind,
@@ -476,7 +473,7 @@ export const createWaitsMethods = (ctx: StoreContext) => {
         client
       )
       const waits = waitRows.map(mapWait)
-      const matchingWait = waits.find((wait: any) => wait.id === args.wait.id) ?? args.wait
+      const matchingWait = waits.find((wait) => wait.id === args.wait.id) ?? args.wait
 
       if (!isFanOutWaitPayload(matchingWait.payload)) {
         return false
@@ -510,7 +507,7 @@ export const createWaitsMethods = (ctx: StoreContext) => {
       )
       const childRuns = childRows
         .map(mapRun)
-        .filter((run: any) => run.parentStepKey === args.wait.stepKey)
+        .filter((run) => run.parentStepKey === args.wait.stepKey)
       const currentWaitRows = await listStepWaitsQuery.run(
         {
           runId: args.wait.runId,
@@ -580,7 +577,7 @@ export const createWaitsMethods = (ctx: StoreContext) => {
       )
       const finalChildRuns = finalChildRows
         .map(mapRun)
-        .filter((run: any) => run.parentStepKey === args.wait.stepKey)
+        .filter((run) => run.parentStepKey === args.wait.stepKey)
       const joinState = getFanOutJoinState({
         childRuns: finalChildRuns,
         waits: finalWaits,

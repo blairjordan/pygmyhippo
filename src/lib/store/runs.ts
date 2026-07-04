@@ -1,6 +1,5 @@
 import type { StoreContext } from "./context.js"
 import type { JsonObject, JsonValue } from "../../types/json.js"
-import type { WorkflowRunRecord } from "../../types/workflow.js"
 import {
   startRunIdempotent as startRunIdempotentQuery,
   getRunByDefinitionAndIdempotencyKey as getRunByDefinitionAndIdempotencyKeyQuery,

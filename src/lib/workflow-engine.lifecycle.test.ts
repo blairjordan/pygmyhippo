@@ -12,7 +12,6 @@ import { createRecordingTracer } from "./tracing.test-helpers.js"
 import { createWorkflowEngine } from "./workflow-engine.js"
 import {
   drainEngine,
-  getGaugeValue,
   requireNumber,
   createStoreStub,
 } from "./workflow-engine.test-helpers.js"

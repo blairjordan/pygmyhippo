@@ -6,6 +6,7 @@ export {
 } from "./lib/auth.js"
 export { getConfig } from "./lib/config.js"
 export { startOutboxLoop } from "./lib/outbox.js"
+export { runHippoProcessRole } from "./lib/process-runtime.js"
 export { startRecoveryLoop, runRecoveryPass } from "./lib/recovery.js"
 export { startScheduleLoop } from "./lib/scheduler.js"
 export { startWorkerLoop } from "./lib/worker.js"

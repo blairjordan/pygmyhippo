@@ -8,6 +8,7 @@ import { runMigrations } from "./migration-runner.js"
 import { createMetrics } from "./metrics.js"
 import { createWorkflowNotifier } from "./notifier.js"
 import { runHippoProcessRole } from "./process-runtime.js"
+import { scaffoldProject } from "./scaffold.js"
 import { createHippoTracer } from "./tracing.js"
 import { renderWorkflowAsMermaid } from "./workflow-definition.js"
 import { loadWorkflowDefinitions } from "./workflow-loader.js"
@@ -56,6 +57,11 @@ export type CliDeps = {
   runMigrations: (databaseUrl: string) => Promise<void>
   loadWorkflowDefinitions: (modulePath: URL) => Promise<WorkflowDefinition[]>
   renderWorkflowAsMermaid: (definition: WorkflowDefinition) => string
+  scaffoldProject: (args: {
+    projectName: string
+    targetDir: string
+    repoRoot: string
+  }) => Promise<unknown>
   bootstrapEngine: CliBootstrapEngine
   bootstrapStore: CliBootstrapStore
   runProcessRole: (args: {
@@ -121,6 +127,7 @@ export const createDefaultCliDeps = (): CliDeps => ({
   runMigrations,
   loadWorkflowDefinitions,
   renderWorkflowAsMermaid,
+  scaffoldProject,
   bootstrapEngine: createDefaultBootstrapEngine,
   bootstrapStore: createDefaultBootstrapStore,
   runProcessRole: async ({ role, workflowsPath }) => {

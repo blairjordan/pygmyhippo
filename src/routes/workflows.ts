@@ -1,69 +1,27 @@
-import { readFile } from "fs/promises"
-import { fileURLToPath } from "url"
 import type { FastifyPluginAsync } from "fastify"
 import { z } from "zod"
 
-import { renderWorkflowAsMermaid } from "../lib/workflow-definition.js"
 import type { HippoAuth } from "../lib/auth.js"
 import type { HippoMetrics } from "../lib/metrics.js"
 import type { WorkflowNotification } from "../lib/notifier.js"
-import { runRecoveryPass } from "../lib/recovery.js"
-import { computeNextScheduleFireAt } from "../lib/scheduler.js"
 import { createTraceAttributes, type HippoTracer } from "../lib/tracing.js"
-import type { JsonObject, JsonValue } from "../types/json.js"
 import type { WorkflowEngine } from "../lib/workflow-engine.js"
+import type { WorkflowStore } from "../lib/workflow-store.js"
 import {
-  BudgetExceededError,
-  type WorkflowStore,
-} from "../lib/workflow-store.js"
-import {
-  RUNS_PAGE_SIZE,
-  createWorkflowStepActions,
-  renderAttemptCard,
-  renderDefinitionDetailDocument,
-  renderDefinitionsIndexDocument,
-  renderEventCard,
-  renderLineageRunCard,
-  renderRunDetailDocument,
-  renderRunsIndexDocument,
-  renderUsageCard,
-  resolveStatusFilter,
-} from "./dashboard.js"
-import {
-  cancelRunBodySchema,
-  createScheduleBodySchema,
-  externalHeartbeatBodySchema,
-  externalSessionEventsBodySchema,
-  externalSessionParamsSchema,
-  forkRunBodySchema,
   jsonValueSchema,
-  optionalQueryText,
-  operatorListQuerySchema,
-  operatorRunsQuerySchema,
-  reconcileBodySchema,
-  resumeBodySchema,
-  rewindRunBodySchema,
   runContextQuerySchema,
   runIdParamsSchema,
   runStreamQuerySchema,
   signalParamsSchema,
   startRunBodySchema,
-  stuckRunsQuerySchema,
-  terminalRunStatuses,
   workflowNameParamsSchema,
-  correlationKeyParamsSchema,
 } from "./workflows/schemas.js"
 import {
-  compensateRunTree,
   createRouteTraceAttributes,
   getExistingRun,
   getIdempotencyKey,
-  paginateRuns,
   projectRunContext,
-  propagateCancellation,
   renderProjections,
-  requireApiAuth,
-  requireCallbackAuth,
   traceAuthedRequest,
   traceRawRequest,
 } from "./workflows/helpers.js"
@@ -71,7 +29,6 @@ import { registerDashboardRoutes } from "./workflows/dashboard-routes.js"
 import { registerOperatorRoutes } from "./workflows/operator-routes.js"
 import { registerSchedulesOperatorRoutes } from "./workflows/schedules-operator-routes.js"
 import { registerCallbackRoutes } from "./workflows/callback-routes.js"
-
 
 export const createWorkflowRoutes = (args: {
   auth: HippoAuth

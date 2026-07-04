@@ -12,7 +12,6 @@ import {
 import { mapRun, requireRow } from "./mappers.js"
 import { withTransaction } from "../db.js"
 import { createTraceAttributes } from "../tracing.js"
-import { LostLeaseError } from "./budget.js"
 
 export const createRunControlMethods = (ctx: StoreContext) => {
   const { db, notifyRunnable, notifyRunEvent, withStoreSpan, self } = ctx

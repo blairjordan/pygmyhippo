@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { createMetrics, LostLeaseError } from "./core.js"
 import { defineWorkflow, endStep, renderWorkflowAsMermaid } from "./sdk.js"
-import { createApiAuthenticator, signCallbackBody } from "./server.js"
+import { createApiAuthenticator, runHippoProcessRole, signCallbackBody } from "./server.js"
 
 describe("public api surfaces", () => {
   it("exposes sdk builders and render helpers", () => {
@@ -43,5 +43,6 @@ describe("public api surfaces", () => {
       } as never)
     ).toBe(true)
     expect(signature).toMatch(/^[a-f0-9]{64}$/u)
+    expect(runHippoProcessRole).toBeTypeOf("function")
   })
 })

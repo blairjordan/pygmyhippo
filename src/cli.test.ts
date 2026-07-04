@@ -5,6 +5,7 @@ import type { HippoProcessRole } from "./lib/process-role.js"
 import type {
   WorkflowDefinition,
   WorkflowRunRecord,
+  WorkflowScheduleRecord,
   WorkflowStepAttemptRecord,
 } from "./types/workflow.js"
 
@@ -68,6 +69,19 @@ const testWorkflowDefinition: WorkflowDefinition = {
   },
 }
 
+const testSchedule: WorkflowScheduleRecord = {
+  id: "schedule-1",
+  workflowName: "demo",
+  cronExpression: "*/5 * * * *",
+  payload: {},
+  taskQueue: "default",
+  priority: 0,
+  nextFireAt: new Date("2024-01-01T00:05:00.000Z"),
+  active: true,
+  createdAt: new Date("2024-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+}
+
 const createHarness = () => {
   const stdout: string[] = []
   const stderr: unknown[][] = []
@@ -80,8 +94,8 @@ const createHarness = () => {
     listRunsPaginated: vi.fn(async () => [testRun]),
     requestCancelRun: vi.fn(async () => testRun),
     listSchedules: vi.fn(async () => []),
-    createSchedule: vi.fn(async () => ({}) as any),
-    updateScheduleActive: vi.fn(async () => ({}) as any),
+    createSchedule: vi.fn(async () => testSchedule),
+    updateScheduleActive: vi.fn(async () => testSchedule),
     deleteSchedule: vi.fn(async () => undefined),
   }
   const deps = {
@@ -103,6 +117,7 @@ const createHarness = () => {
     runMigrations: vi.fn(async () => undefined),
     loadWorkflowDefinitions: vi.fn(async () => [testWorkflowDefinition]),
     renderWorkflowAsMermaid: vi.fn(() => "flowchart TD"),
+    scaffoldProject: vi.fn(async () => undefined),
     bootstrapStore: vi.fn(async () => ({ sql, store })),
     runProcessRole: vi.fn(
       async (args: { role: HippoProcessRole; workflowsPath: string }) => {

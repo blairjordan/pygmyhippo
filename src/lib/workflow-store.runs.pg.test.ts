@@ -475,17 +475,6 @@ describe.skipIf(!testDatabaseUrl)("workflow store postgres integration - runs", 
           JOIN pg_class ON pg_class.oid = (quote_ident(targets.table_name))::regclass
         `
       )
-      const downgradedConstraintLookup = await client.query<{ key_count: number }>(
-        `
-          SELECT pool_constraint.key_count
-          FROM (
-            SELECT cardinality(conkey) AS key_count
-            FROM pg_constraint
-            WHERE conname = 'workflow_runs_branched_from_attempt_fkey'
-          ) AS pool_constraint
-        `
-      )
-
       expect(downgradedRelationKinds.rows).toEqual([
         {
           table_name: "workflow_step_attempts",

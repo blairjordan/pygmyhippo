@@ -1,6 +1,5 @@
 import type { PoolClient } from "pg"
 import type { StoreContext } from "./context.js"
-import type { JsonValue, JsonObject } from "../../types/json.js"
 import type { WorkflowBudget, WorkflowUsageInput } from "../../types/workflow.js"
 import {
   insertUsage as insertUsageQuery,

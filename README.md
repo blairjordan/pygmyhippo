@@ -6,92 +6,24 @@ One database. No Redis, no Elasticsearch, no Kafka, no separate control plane �
 
 ## Features
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>🐘 Postgres-Native Core</h3>
-Runs, attempts, waits, signals, schedules, outbox, and KV in one database. <code>LISTEN/NOTIFY</code> wakes workers the moment work becomes runnable.
-</td>
-<td align="center" width="33%">
-<h3>🔁 Durable Retries</h3>
-Per-step retry policy with capped exponential backoff and jitter — built for flaky LLM calls.
-</td>
-<td align="center" width="33%">
-<h3>📨 Signals & Waits</h3>
-Block on Slack approvals, webhook callbacks, or named signals without holding worker slots.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🧭 Child Workflows</h3>
-Spawn sub-agents (code edit, scan, summarize) in parallel and wait durably for results.
-</td>
-<td align="center">
-<h3>🛑 Cancel & Terminate</h3>
-Graceful stop at step boundaries, or hard terminate with cascading child cancellation and compensation.
-</td>
-<td align="center">
-<h3>📚 Continue As New</h3>
-Roll long runs into a fresh one with payload reset and a <code>continued_from_run_id</code> chain.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🧵 Queue Routing</h3>
-Task queues + priority so GPU-bound or LLM-bound workers don't fight for the same lease.
-</td>
-<td align="center">
-<h3>🗓️ Cron Schedules</h3>
-Server-side cron creates runs — no external trigger service.
-</td>
-<td align="center">
-<h3>🧱 Same-Txn Step Commit</h3>
-Write workflow progress and your business row in the same Postgres transaction.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>📦 Outbox Helper</h3>
-Enqueue outbox rows inside step commits; drain loop delivers them later.
-</td>
-<td align="center">
-<h3>⏪ Rewind & Fork</h3>
-Recover from a bad reasoning path by branching a terminal run from a prior attempt's stored snapshot.
-</td>
-<td align="center">
-<h3>💸 Budget Caps</h3>
-Track cost in real-time; auto-abort with <code>exhausted_budget</code> before LLM spend runs away.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🔑 Run-Scoped KV</h3>
-Per-run scratchpad for stashing state across retries or phases without bloating the payload.
-</td>
-<td align="center">
-<h3>📡 Live SSE Events</h3>
-Stream typed progress (LLM tokens, tool calls) to monitoring UIs over Server-Sent Events.
-</td>
-<td align="center">
-<h3>🌐 External Sessions</h3>
-Attach long-running agent reasoning or ML jobs with heartbeats, live events, and cancellation hooks.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🛰️ OTel Tracing</h3>
-Nested spans for HTTP, worker ticks, steps, scheduler, recovery, outbox, store mutations.
-</td>
-<td align="center">
-<h3>🗂️ Partitioned History</h3>
-<code>workflow_step_attempts</code> and <code>workflow_events</code> hash-partitioned by <code>run_id</code>.
-</td>
-<td align="center">
-<h3>🎨 Built-in Dashboard</h3>
-Mermaid topology, clickable attempts, live event tails — operator UI ships in-process.
-</td>
-</tr>
-</table>
+- **Postgres-native core:** Runs, attempts, waits, signals, schedules, outbox, and KV in one database. `LISTEN/NOTIFY` wakes workers the moment work becomes runnable.
+- **Durable retries:** Per-step retry policy with capped exponential backoff and jitter, built for flaky LLM calls.
+- **Signals and waits:** Block on Slack approvals, webhook callbacks, or named signals without holding worker slots.
+- **Child workflows:** Spawn sub-agents in parallel and wait durably for results.
+- **Cancel and terminate:** Graceful stop at step boundaries, or hard terminate with cascading child cancellation and compensation.
+- **Continue as new:** Roll long runs into a fresh one with payload reset and a `continued_from_run_id` chain.
+- **Queue routing:** Task queues and priority keep GPU-bound or LLM-bound workers from fighting for the same lease.
+- **Cron schedules:** Server-side cron creates runs without an external trigger service.
+- **Same-transaction step commit:** Write workflow progress and your business row in the same Postgres transaction.
+- **Outbox helper:** Enqueue outbox rows inside step commits; drain loop delivers them later.
+- **Rewind and fork:** Recover from a bad reasoning path by branching a terminal run from a prior attempt's stored snapshot.
+- **Budget caps:** Track cost in real time and auto-abort with `exhausted_budget` before LLM spend runs away.
+- **Run-scoped KV:** Per-run scratchpad for state across retries or phases without bloating the payload.
+- **Live SSE events:** Stream typed progress to monitoring UIs over Server-Sent Events.
+- **External sessions:** Attach long-running agent reasoning or ML jobs with heartbeats, live events, and cancellation hooks.
+- **OTel tracing:** Nested spans for HTTP, worker ticks, steps, scheduler, recovery, outbox, and store mutations.
+- **Partitioned history:** `workflow_step_attempts` and `workflow_events` are hash-partitioned by `run_id`.
+- **Built-in dashboard:** Mermaid topology, clickable attempts, and live event tails ship in-process.
 
 ## Quickstart
 

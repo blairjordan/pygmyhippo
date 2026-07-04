@@ -22,7 +22,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "hippo:dev": "tsx scripts/hippo-dev.ts",
-    "hippo:init": "node ./bin/hippo.js init",
+    "hippo:init": "tsx src/cli.ts init",
     "start": "node dist/index.js",
     "build": "node scripts/generate-migrations.mjs && npm run build:css && tsc -p tsconfig.json && node scripts/sync-workspace-packages.mjs",
     "build:packages": "node scripts/sync-workspace-packages.mjs",

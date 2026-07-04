@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg"
 import type { StoreContext } from "./context.js"
+import type { Database } from "../db.js"
 import type { JsonObject, JsonValue } from "../../types/json.js"
 import type {
   RetryPolicy,
@@ -8,6 +9,7 @@ import type {
   WorkflowBudget,
   WorkflowRunRecord,
   StepExecutionKV,
+  WorkflowUsageInput,
 } from "../../types/workflow.js"
 import {
   getRunByIdForUpdate as getRunByIdForUpdateQuery,
@@ -57,7 +59,7 @@ const insertStepEvent = async (args: {
   stepAttemptId: string
   type: string
   data: JsonValue
-  executor: any
+  executor: Database | PoolClient
 }) => {
   if (args.type.trim().length === 0) {
     throw new Error("Step event type must not be empty")
@@ -150,7 +152,7 @@ export const createExecutionMethods = (ctx: StoreContext) => {
             },
           })
           const now = new Date()
-          const pendingUsage: any[] = []
+          const pendingUsage: WorkflowUsageInput[] = []
           const kv: StepExecutionKV = {
             get: async (key: string) => {
               return self.getRunKV(lockedRun.id, key, client)

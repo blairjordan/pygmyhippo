@@ -1,4 +1,3 @@
-import type { StoreContext } from "./context.js"
 import type { JsonObject } from "../../types/json.js"
 import type {
   WorkflowBudget,
@@ -32,7 +31,7 @@ export class TransactionBudgetExceededError extends Error {
   }
 }
 
-export const createBudgetMethods = (ctx: StoreContext) => {
+export const createBudgetMethods = () => {
   const getBudgetExhaustion = (args: {
     budget: WorkflowBudget | undefined
     usage: WorkflowUsageInput

@@ -1,6 +1,6 @@
 import { createHippoTracer, type HippoTracer, type TraceAttributes } from "./tracing.js"
 import type { Database } from "./db.js"
-import type { StoreContext } from "./store/context.js"
+import type { StoreContext, StoreSelf } from "./store/context.js"
 import { createBudgetMethods } from "./store/budget.js"
 import { createKVMethods } from "./store/kv.js"
 import { createOutboxMethods } from "./store/outbox.js"
@@ -50,7 +50,7 @@ export const createWorkflowStore = (
       run
     )
 
-  const self: any = {}
+  const self = {} as StoreSelf
 
   const context: StoreContext = {
     db,
@@ -61,7 +61,7 @@ export const createWorkflowStore = (
     self,
   }
 
-  const budget = createBudgetMethods(context)
+  const budget = createBudgetMethods()
   const kv = createKVMethods(context)
   const outbox = createOutboxMethods(context)
   const schedules = createScheduleMethods(context)

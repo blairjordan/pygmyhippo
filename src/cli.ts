@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import path from "node:path"
 import process from "node:process"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { computeNextScheduleFireAt } from "./lib/scheduler.js"
 
@@ -17,6 +17,27 @@ import type {
   WorkflowRunStatus,
 } from "./types/workflow.js"
 
+const resolvePackageRoot = async (startDir: string) => {
+  let currentDir = startDir
+
+  while (true) {
+    try {
+      await import("node:fs/promises").then(({ readFile }) =>
+        readFile(path.join(currentDir, "package.json"), "utf8")
+      )
+      return currentDir
+    } catch (error) {
+      const parentDir = path.dirname(currentDir)
+
+      if (parentDir === currentDir) {
+        throw error
+      }
+
+      currentDir = parentDir
+    }
+  }
+}
+
 export const createHippoCli = (inputDeps: Partial<CliDeps> = {}) => {
   const deps = {
     ...createDefaultCliDeps(),
@@ -28,6 +49,25 @@ export const createHippoCli = (inputDeps: Partial<CliDeps> = {}) => {
     .name("hippo")
     .description("Hippo command-line interface")
     .version("0.1.0")
+
+  program
+    .command("init <projectDirectory>")
+    .description("Scaffold a new Hippo workflow app")
+    .action(async (projectDirectory: string) => {
+      const targetDir = path.resolve(deps.cwd(), projectDirectory)
+      const projectName = path.basename(targetDir)
+      const repoRoot = await resolvePackageRoot(
+        path.dirname(fileURLToPath(import.meta.url))
+      )
+
+      try {
+        await deps.scaffoldProject({ projectName, targetDir, repoRoot })
+        deps.stdout.log(`Scaffolded Hippo app in ${targetDir}`)
+      } catch (error) {
+        deps.stderr.error("Failed to scaffold Hippo app:", error)
+        deps.exit(1)
+      }
+    })
 
   program
     .command("migrate")
