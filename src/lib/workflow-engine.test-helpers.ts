@@ -1273,6 +1273,7 @@ export const createStoreStub = () => {
         updatedAt: now(),
         completedAt: null,
         metadata: args.metadata ?? {},
+        traceContext: args.traceContext ?? null,
       }
       runs.set(run.id, run)
       if (args.idempotencyKey) {

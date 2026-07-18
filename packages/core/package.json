@@ -4,11 +4,19 @@
   "private": false,
   "type": "module",
   "description": "Hippo core engine, store, tracing, and shared runtime types",
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^2.8.0",
+    "@opentelemetry/core": "^2.8.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/semantic-conventions": "^1.41.1",
     "@pgtyped/runtime": "2.4.2",
     "pg": "8.16.3",
     "prom-client": "15.1.3"

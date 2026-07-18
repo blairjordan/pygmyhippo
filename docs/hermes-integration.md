@@ -20,7 +20,37 @@ Use a non-development `HIPPO_ENV` in containers. This disables source reloads
 that need a writable application directory and requires an API token and
 callback secret.
 
-## Hermes adapter
+## Hermes package
+
+Use [`pygmyhippo-hermes`](../packages/hermes/) when a workflow needs a durable
+Hermes agent turn. The package provides `hermesTurn`, an external-session step
+that starts a runner-owned turn, preserves `traceparent`, serialises output and
+usage safely, handles duplicate callback delivery through PygmyHippo's native
+idempotency, and asks the runner to stop on hard cancellation.
+
+```ts
+import { defineWorkflow, endStep } from "pygmyhippo-sdk"
+import { hermesTurn } from "pygmyhippo-hermes"
+
+export const workflows = [defineWorkflow({
+  name: "release-summary",
+  version: 1,
+  startAt: "agent",
+  steps: {
+    agent: hermesTurn({
+      runner: { url: process.env.HERMES_TURN_RUNNER_URL!, token: process.env.HERMES_TURN_TOKEN! },
+      prompt: ({ input }) => `Summarise: ${String(input.text ?? "")}`,
+    }),
+    done: endStep(),
+    "turn-failed": endStep(),
+  },
+})]
+```
+
+See the independent [Hermes example](../examples/hermes-integration/) for the
+runner HTTP contract and deployment variables.
+
+## Hermes MCP adapter
 
 The Hermes-specific layer is deliberately small:
 
@@ -33,19 +63,12 @@ The Hermes-specific layer is deliberately small:
 This keeps PygmyHippo usable by any HTTP client and confines Hermes process,
 credential, and prompt policy to the adapter repository.
 
-## Agent steps
+## Runner boundary
 
-PygmyHippo task definitions own execution. For a Hermes-backed task, put the
-Hermes invocation behind an application-owned task helper and return only JSON
-serialisable `patch`, `output`, and transition data. Keep cancellation
-cooperative: check the run's cancellation signal at tool and turn boundaries,
-and use PygmyHippo's hard terminate only when the underlying execution can be
-stopped safely.
-
-The included Apollo `ack-demo` is intentionally deterministic: it verifies
-durable sequencing and MCP promotion without spending model tokens. Production
-agent workflows should replace those task bodies with the application's Hermes
-turn adapter and retain the same workflow-control surface.
+The runner remains application-owned because it holds Hermes credentials and
+chooses whether to invoke the Hermes CLI, gateway, or SDK. It must start turns,
+accept cancellation, and sign callbacks. PygmyHippo owns durable workflow state
+on both sides of that boundary; see the example for the precise contract.
 
 ## Observability
 

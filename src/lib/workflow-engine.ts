@@ -8,6 +8,7 @@ import type { HippoMetrics } from "./metrics.js"
 import {
   createHippoTracer,
   createTraceAttributes,
+  getActiveTraceContext,
   withTraceContext,
   type HippoTracer,
 } from "./tracing.js"
@@ -70,6 +71,7 @@ export const createWorkflowEngine = (args: {
           input: input.payload,
           currentStepKey: definition.startAt,
           metadata: input.metadata ?? {},
+          traceContext: getActiveTraceContext() ?? null,
           ...(input.idempotencyKey === undefined
             ? {}
             : { idempotencyKey: input.idempotencyKey }),

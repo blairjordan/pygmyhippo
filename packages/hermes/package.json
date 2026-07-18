@@ -1,9 +1,9 @@
 {
-  "name": "pygmyhippo-sdk",
+  "name": "pygmyhippo-hermes",
   "version": "0.1.1",
   "private": false,
   "type": "module",
-  "description": "Hippo workflow definition helpers and TypeScript-first SDK surface",
+  "description": "PygmyHippo external-session workflow steps for Hermes agent runners",
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
@@ -17,8 +17,8 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/src/sdk.d.ts",
-      "default": "./dist/src/sdk.js"
+      "types": "./dist/src/integrations/hermes.d.ts",
+      "default": "./dist/src/integrations/hermes.js"
     }
   }
 }

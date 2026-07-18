@@ -62,16 +62,18 @@ curl -X POST \
 | Package | Purpose |
 |---|---|
 | [`pygmyhippo-sdk`](https://www.npmjs.com/package/pygmyhippo-sdk) | `defineWorkflow`, step helpers, types |
+| [`pygmyhippo-hermes`](https://www.npmjs.com/package/pygmyhippo-hermes) | Durable external-session step for Hermes runners |
 | [`pygmyhippo-core`](https://www.npmjs.com/package/pygmyhippo-core) | Engine, store, tracer, migrations |
 | [`pygmyhippo-server`](https://www.npmjs.com/package/pygmyhippo-server) | Fastify app, worker loop, recovery, scheduler |
 | [`pygmyhippo-cli`](https://www.npmjs.com/package/pygmyhippo-cli) | PygmyHippo CLI with the `hippo init` scaffolder |
 
 ```bash
-npm install pygmyhippo-sdk pygmyhippo-core pygmyhippo-server
+npm install pygmyhippo-sdk pygmyhippo-hermes pygmyhippo-core pygmyhippo-server
 ```
 
 ```ts
 import { defineWorkflow, taskStep, endStep } from "pygmyhippo-sdk"
+import { hermesTurn } from "pygmyhippo-hermes"
 import { createHippoTracer, createWorkflowEngine, createWorkflowStore } from "pygmyhippo-core"
 import { createApp, startWorkerLoop } from "pygmyhippo-server"
 ```
