@@ -1,13 +1,13 @@
-"""Reference HTTP runner for ``pygmyhippo-hermes`` workflow steps.
+"""Application-owned Hermes subprocess runner for ``pygmyhippo-hermes``.
 
-The runner is deliberately application-owned: it invokes the locally installed
-Hermes CLI using that application's credentials, then signs a callback to the
-PygmyHippo external-session endpoint. PygmyHippo owns durable state; this
-process owns the short-lived agent subprocess.
+PygmyHippo owns durable workflow state. This runner owns only the short-lived
+Hermes process: it authenticates requests, terminates process groups on cancel,
+signs callbacks, and links its OpenTelemetry span to the incoming workflow span.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import hmac
 import json
@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Callable
 
 try:
     from opentelemetry import context, propagate, trace
@@ -30,17 +31,31 @@ try:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.trace import Status, StatusCode
-except ImportError:  # Allows a no-telemetry local proof without optional deps.
+except ImportError:  # A local proof may deliberately omit optional telemetry.
     context = propagate = trace = None
     OTLPSpanExporter = Resource = TracerProvider = BatchSpanProcessor = None
     Status = StatusCode = None
 
 
-HIPPO_URL = os.environ["HIPPO_URL"].rstrip("/")
-HIPPO_CALLBACK_SECRET = os.environ["HIPPO_CALLBACK_SECRET"]
-TURN_TOKEN = os.environ["HERMES_TURN_TOKEN"]
-HERMES_COMMAND = shlex.split(os.environ.get("HERMES_COMMAND", "hermes"))
-HERMES_WORKDIR = os.environ.get("HERMES_WORKDIR") or None
+@dataclass(frozen=True)
+class RunnerConfig:
+    hippo_url: str
+    callback_secret: str
+    turn_token: str
+    hermes_command: tuple[str, ...]
+    workdir: str | None = None
+
+    @classmethod
+    def from_env(cls) -> "RunnerConfig":
+        return cls(
+            hippo_url=os.environ["HIPPO_URL"].rstrip("/"),
+            callback_secret=os.environ["HIPPO_CALLBACK_SECRET"],
+            turn_token=os.environ["HERMES_TURN_TOKEN"],
+            hermes_command=tuple(shlex.split(os.environ.get("HERMES_COMMAND", "hermes"))),
+            workdir=os.environ.get("HERMES_WORKDIR") or None,
+        )
+
+
 TURNS: dict[str, subprocess.Popen[str]] = {}
 TURNS_LOCK = threading.Lock()
 
@@ -79,26 +94,23 @@ def canonical_json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
 
-def callback(external_id: str, payload: dict) -> None:
+def callback(config: RunnerConfig, external_id: str, payload: dict) -> None:
+    """Resume an external session with PygmyHippo's HMAC callback contract."""
     body = {"payload": payload}
     timestamp = str(int(time.time()))
     signature = hmac.new(
-        HIPPO_CALLBACK_SECRET.encode(),
+        config.callback_secret.encode(),
         f"{timestamp}.{canonical_json(body)}".encode(),
         hashlib.sha256,
     ).hexdigest()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Hippo-Timestamp": timestamp,
-        "X-Hippo-Signature": signature,
-    }
+    headers = {"Content-Type": "application/json", "X-Hippo-Timestamp": timestamp, "X-Hippo-Signature": signature}
     if propagate is not None:
         carrier: dict[str, str] = {}
         propagate.inject(carrier)
         if carrier.get("traceparent"):
             headers["traceparent"] = carrier["traceparent"]
     request = urllib.request.Request(
-        f"{HIPPO_URL}/v1/external-sessions/{external_id}/resume",
+        f"{config.hippo_url}/v1/external-sessions/{external_id}/resume",
         data=canonical_json(body).encode(), method="POST", headers=headers,
     )
     try:
@@ -109,8 +121,18 @@ def callback(external_id: str, payload: dict) -> None:
             raise
 
 
-def run_turn(external_id: str, prompt: str, model: str | None, workflow: str, step: str, traceparent: str | None) -> None:
-    command = [*HERMES_COMMAND]
+def cancel_turn(external_id: str) -> bool:
+    """Signal the complete Hermes process group; return whether it was live."""
+    with TURNS_LOCK:
+        process = TURNS.get(external_id)
+    if not process or process.poll() is not None:
+        return False
+    os.killpg(process.pid, signal.SIGTERM)
+    return True
+
+
+def run_turn(config: RunnerConfig, external_id: str, prompt: str, model: str | None, workflow: str, step: str, traceparent: str | None, on_callback: Callable[[RunnerConfig, str, dict], None] = callback) -> None:
+    command = [*config.hermes_command]
     if model:
         command.extend(["-m", model])
     command.extend(["-z", prompt])
@@ -124,25 +146,30 @@ def run_turn(external_id: str, prompt: str, model: str | None, workflow: str, st
             span.set_attribute("workflow.step.kind", "external_session")
             span.set_attribute("workflow.run.id", external_id.removeprefix("hermes:"))
             span.set_attribute("gen_ai.operation.name", "invoke_agent")
-            if model: span.set_attribute("gen_ai.request.model", model)
+            if model:
+                span.set_attribute("gen_ai.request.model", model)
             started = time.monotonic()
-            process = subprocess.Popen(command, cwd=HERMES_WORKDIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            with TURNS_LOCK: TURNS[external_id] = process
+            process = subprocess.Popen(command, cwd=config.workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            with TURNS_LOCK:
+                TURNS[external_id] = process
             stdout, stderr = process.communicate()
-            with TURNS_LOCK: TURNS.pop(external_id, None)
+            with TURNS_LOCK:
+                TURNS.pop(external_id, None)
             span.set_attribute("workflow.duration_ms", round((time.monotonic() - started) * 1000))
             if process.returncode == 0:
                 span.set_attribute("workflow.outcome", "success")
                 span.set_attribute("workflow.response.chars", len(stdout.strip()))
-                if Status is not None: span.set_status(Status(StatusCode.OK))
+                if Status is not None:
+                    span.set_status(Status(StatusCode.OK))
                 payload = {"status": "completed", "output": stdout.strip(), "usage": {}}
             else:
                 error = stderr.strip()[-4_000:] or f"Hermes exited {process.returncode}"
                 span.set_attribute("workflow.outcome", "failed")
                 span.record_exception(RuntimeError(error))
-                if Status is not None: span.set_status(Status(StatusCode.ERROR, error))
+                if Status is not None:
+                    span.set_status(Status(StatusCode.ERROR, error))
                 payload = {"status": "failed", "error": error, "usage": {}}
-            callback(external_id, payload)
+            on_callback(config, external_id, payload)
         if TRACER_PROVIDER is not None:
             TRACER_PROVIDER.force_flush(timeout_millis=10_000)
     finally:
@@ -150,50 +177,52 @@ def run_turn(external_id: str, prompt: str, model: str | None, workflow: str, st
             context.detach(token)
 
 
-class Handler(BaseHTTPRequestHandler):
-    def _json(self, status: int, payload: dict) -> None:
-        data = canonical_json(payload).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+def make_handler(config: RunnerConfig):
+    class Handler(BaseHTTPRequestHandler):
+        def _json(self, status: int, payload: dict) -> None:
+            data = canonical_json(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
-    def _authorised(self) -> bool:
-        return hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {TURN_TOKEN}")
+        def _authorised(self) -> bool:
+            return hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {config.turn_token}")
 
-    def do_GET(self) -> None:
-        if self.path == "/healthz": self._json(HTTPStatus.OK, {"status": "pass"})
-        else: self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        def do_GET(self) -> None:
+            self._json(HTTPStatus.OK, {"status": "pass"}) if self.path == "/healthz" else self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
-    def do_POST(self) -> None:
-        if not self._authorised():
-            self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}); return
-        try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-        except (ValueError, json.JSONDecodeError):
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid JSON"}); return
-        if self.path == "/turns":
-            external_id, prompt = body.get("external_id"), body.get("prompt")
-            if not isinstance(external_id, str) or not isinstance(prompt, str):
-                self._json(HTTPStatus.BAD_REQUEST, {"error": "external_id and prompt are required strings"}); return
-            model, workflow, step, traceparent = body.get("model"), body.get("workflow", "unknown"), body.get("step", "agent"), body.get("traceparent")
-            if any(value is not None and not isinstance(value, str) for value in (model, traceparent)) or not isinstance(workflow, str) or not isinstance(step, str):
-                self._json(HTTPStatus.BAD_REQUEST, {"error": "model, workflow, step, and traceparent must be strings"}); return
-            threading.Thread(target=run_turn, args=(external_id, prompt, model, workflow, step, traceparent), daemon=True).start()
-            self._json(HTTPStatus.ACCEPTED, {"external_id": external_id}); return
-        if self.path.startswith("/turns/") and self.path.endswith("/cancel"):
-            external_id = self.path.removeprefix("/turns/").removesuffix("/cancel")
-            with TURNS_LOCK: process = TURNS.get(external_id)
-            if process and process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
-                self._json(HTTPStatus.ACCEPTED, {"external_id": external_id, "status": "cancelling"})
-            else:
-                self._json(HTTPStatus.OK, {"external_id": external_id, "status": "not_running"})
-            return
-        self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        def do_POST(self) -> None:
+            if not self._authorised():
+                self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}); return
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            except (ValueError, json.JSONDecodeError):
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid JSON"}); return
+            if self.path == "/turns":
+                external_id, prompt = body.get("external_id"), body.get("prompt")
+                if not isinstance(external_id, str) or not isinstance(prompt, str):
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": "external_id and prompt are required strings"}); return
+                model, workflow, step, traceparent = body.get("model"), body.get("workflow", "unknown"), body.get("step", "agent"), body.get("traceparent")
+                if any(value is not None and not isinstance(value, str) for value in (model, traceparent)) or not isinstance(workflow, str) or not isinstance(step, str):
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": "model, workflow, step, and traceparent must be strings"}); return
+                threading.Thread(target=run_turn, args=(config, external_id, prompt, model, workflow, step, traceparent), daemon=True).start()
+                self._json(HTTPStatus.ACCEPTED, {"external_id": external_id}); return
+            if self.path.startswith("/turns/") and self.path.endswith("/cancel"):
+                external_id = self.path.removeprefix("/turns/").removesuffix("/cancel")
+                self._json(HTTPStatus.ACCEPTED if cancel_turn(external_id) else HTTPStatus.OK, {"external_id": external_id, "status": "cancelling" if external_id in TURNS else "not_running"})
+                return
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
-    def log_message(self, _format: str, *_args: object) -> None: return
+        def log_message(self, _format: str, *_args: object) -> None: return
+    return Handler
 
 
-ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("HERMES_TURN_RUNNER_PORT", "8765"))), Handler).serve_forever()
+def main() -> None:
+    config = RunnerConfig.from_env()
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("HERMES_TURN_RUNNER_PORT", "8765"))), make_handler(config)).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -4,7 +4,23 @@ This is a runnable, application-owned reference runner for
 `pygmyhippo-hermes`. It invokes an installed Hermes CLI, handles process-group
 cancellation, signs completion callbacks, and exports OpenTelemetry spans.
 
-Install its optional telemetry dependencies alongside the Hermes CLI:
+It is also a versioned container artifact: GitHub Releases publish
+`ghcr.io/blairjordan/pygmyhippo-hermes-runner:<release-tag>`. The image contains
+the runner and its telemetry dependencies, but never credentials or config.
+
+Run it with application-owned Hermes state/config mounted in:
+
+```bash
+docker run --rm -p 8765:8765 \
+  -v "$PWD/hermes-state:/opt/data" \
+  -e HIPPO_URL=http://host.docker.internal:3000 \
+  -e HIPPO_CALLBACK_SECRET=replace-with-the-pygmyhippo-callback-secret \
+  -e HERMES_TURN_TOKEN=replace-with-a-runner-bearer-token \
+  ghcr.io/blairjordan/pygmyhippo-hermes-runner:v0.1.2
+```
+
+For a non-container deployment, install its optional telemetry dependencies
+alongside the Hermes CLI:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -33,3 +49,9 @@ python hermes_turn_runner.py
 is suitable for a container health check. The runner never receives PygmyHippo
 database credentials or stores Hermes credentials itself—it uses the configured
 Hermes CLI environment.
+
+Run its contract tests after installing `requirements.txt`:
+
+```bash
+python -m unittest test_runner.py
+```

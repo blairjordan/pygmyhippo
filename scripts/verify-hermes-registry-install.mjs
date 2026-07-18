@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const hermesManifest = JSON.parse(await readFile(path.join(repoRoot, "packages/hermes/package.json"), "utf8"))
+// A release must verify before it publishes its new npm version. Default to the
+// known public package; callers can pin a newly published version afterwards.
+const registryVersion = process.env.HERMES_REGISTRY_VERSION || "0.1.1"
 const tempDir = await mkdtemp(path.join(os.tmpdir(), "pygmyhippo-hermes-registry-"))
 const npm = process.platform === "win32" ? "npm.cmd" : "npm"
 
@@ -80,10 +83,10 @@ await step.cancel({}, started.externalId)
 assert.equal(requests[1].url, "http://runner.test/turns/hermes%3Arun-1/cancel")
 `)
 
-  run(npm, ["install", "--ignore-scripts", "--no-package-lock", "pygmyhippo-sdk", `pygmyhippo-hermes@${hermesManifest.version}`, "typescript"])
+  run(npm, ["install", "--ignore-scripts", "--no-package-lock", "pygmyhippo-sdk", `pygmyhippo-hermes@${registryVersion}`, "typescript"])
   run(npm, ["exec", "tsc", "--", "--project", "tsconfig.json"])
   run(process.execPath, ["lifecycle.mjs"])
-  console.log(`Verified registry install for pygmyhippo-hermes@${hermesManifest.version}`)
+  console.log(`Verified registry install for pygmyhippo-hermes@${registryVersion} (local target: ${hermesManifest.version})`)
 } finally {
   await rm(tempDir, { recursive: true, force: true })
 }

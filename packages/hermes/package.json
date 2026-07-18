@@ -1,6 +1,6 @@
 {
   "name": "pygmyhippo-hermes",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "description": "PygmyHippo external-session workflow steps for Hermes agent runners",

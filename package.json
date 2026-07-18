@@ -38,7 +38,8 @@
     "pgtyped": "npx pgtyped -c pgtyped-config.json",
     "render:demo": "tsx scripts/render-demo.ts",
     "test:public-api": "npm run build && node scripts/verify-public-api.mjs",
-    "test:hermes-registry": "node scripts/verify-hermes-registry-install.mjs"
+    "test:hermes-registry": "node scripts/verify-hermes-registry-install.mjs",
+    "test:hermes-runner": "python3 -m unittest examples/hermes-runner/test_runner.py"
   },
   "dependencies": {
     "@fastify/sensible": "6.0.3",
