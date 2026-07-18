@@ -16,6 +16,14 @@
     "hippo": "./bin/hippo.js"
   },
   "description": "Durable workflow engine with Postgres-backed execution state",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blairjordan/pygmyhippo.git"
+  },
+  "homepage": "https://github.com/blairjordan/pygmyhippo#readme",
+  "bugs": {
+    "url": "https://github.com/blairjordan/pygmyhippo/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   },

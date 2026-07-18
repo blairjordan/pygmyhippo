@@ -81,6 +81,13 @@ class RunnerTests(unittest.TestCase):
         runner.run_turn(self._config_for(script), "hermes:failed", "ignore", None, "test", "agent", None, lambda *_args: callbacks.append(_args[-1]))
         self.assertEqual(callbacks, [{"status": "failed", "error": "hermes failed", "usage": {}}])
 
+    def test_unstartable_hermes_process_fails_workflow(self):
+        callbacks = []
+        config = runner.RunnerConfig(self.config.hippo_url, self.config.callback_secret, self.config.turn_token, ("/does/not/exist/hermes",))
+        runner.run_turn(config, "hermes:unstartable", "ignore", None, "test", "agent", None, lambda *_args: callbacks.append(_args[-1]))
+        self.assertEqual(callbacks[0]["status"], "failed")
+        self.assertIn("Unable to start Hermes", callbacks[0]["error"])
+
     @unittest.skipIf(runner.trace is None, "OpenTelemetry dependencies not installed")
     def test_otlp_span_uses_incoming_trace_id(self):
         from opentelemetry.sdk.trace import TracerProvider

@@ -149,7 +149,16 @@ def run_turn(config: RunnerConfig, external_id: str, prompt: str, model: str | N
             if model:
                 span.set_attribute("gen_ai.request.model", model)
             started = time.monotonic()
-            process = subprocess.Popen(command, cwd=config.workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                process = subprocess.Popen(command, cwd=config.workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            except OSError as exc:
+                error = f"Unable to start Hermes: {exc}"
+                span.set_attribute("workflow.outcome", "failed")
+                span.record_exception(exc)
+                if Status is not None:
+                    span.set_status(Status(StatusCode.ERROR, error))
+                on_callback(config, external_id, {"status": "failed", "error": error, "usage": {}})
+                return
             with TURNS_LOCK:
                 TURNS[external_id] = process
             stdout, stderr = process.communicate()
@@ -211,7 +220,8 @@ def make_handler(config: RunnerConfig):
                 self._json(HTTPStatus.ACCEPTED, {"external_id": external_id}); return
             if self.path.startswith("/turns/") and self.path.endswith("/cancel"):
                 external_id = self.path.removeprefix("/turns/").removesuffix("/cancel")
-                self._json(HTTPStatus.ACCEPTED if cancel_turn(external_id) else HTTPStatus.OK, {"external_id": external_id, "status": "cancelling" if external_id in TURNS else "not_running"})
+                cancelled = cancel_turn(external_id)
+                self._json(HTTPStatus.ACCEPTED if cancelled else HTTPStatus.OK, {"external_id": external_id, "status": "cancelling" if cancelled else "not_running"})
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 

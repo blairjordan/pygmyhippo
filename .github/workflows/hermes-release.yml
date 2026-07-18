@@ -39,6 +39,7 @@ jobs:
       - name: Verify release tag matches npm package version
         run: test "v$(node -p \"require('./packages/hermes/package.json').version\")" = "${{ github.event.release.tag_name }}"
       - run: npm ci
+      - run: npm run build --workspace=pygmyhippo-hermes
       - run: npm publish --workspace=pygmyhippo-hermes --access public --provenance
       - run: HERMES_REGISTRY_VERSION="${{ github.event.release.tag_name }}"; HERMES_REGISTRY_VERSION="${HERMES_REGISTRY_VERSION#v}"; export HERMES_REGISTRY_VERSION; npm run test:hermes-registry
       - uses: docker/login-action@v3

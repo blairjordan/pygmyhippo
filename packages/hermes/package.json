@@ -4,6 +4,15 @@
   "private": false,
   "type": "module",
   "description": "PygmyHippo external-session workflow steps for Hermes agent runners",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blairjordan/pygmyhippo.git",
+    "directory": "packages/hermes"
+  },
+  "homepage": "https://github.com/blairjordan/pygmyhippo/tree/main/packages/hermes#readme",
+  "bugs": {
+    "url": "https://github.com/blairjordan/pygmyhippo/issues"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
