@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify"
 import type { HippoAuth } from "../../lib/auth.js"
 import type { HippoMetrics } from "../../lib/metrics.js"
 import type { WorkflowNotification } from "../../lib/notifier.js"
-import { createTraceAttributes, type HippoTracer } from "../../lib/tracing.js"
+import { createTraceAttributes, type HippoTracer, withTraceContext } from "../../lib/tracing.js"
 import type { WorkflowEngine } from "../../lib/workflow-engine.js"
 import type { WorkflowStore } from "../../lib/workflow-store.js"
 import type { JsonObject, JsonValue } from "../../types/json.js"
@@ -249,6 +249,11 @@ export const compensateRunTree = async (args: {
   return args.engine.runCompensation(args.runId)
 }
 
+const getRequestTraceparent = (request: FastifyRequest) => {
+  const value = request.headers.traceparent
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
 const traceRequest = <T>(
   tracer: HippoTracer,
   input: {
@@ -269,9 +274,19 @@ export const traceAuthedRequest = <T>(args: {
   }
   run: () => Promise<T>
 }) =>
-  traceRequest(args.tracer, args.trace, async () => {
-    await requireApiAuth(args.app, args.request, args.auth, args.tracer)
-    return args.run()
-  })
+  withTraceContext(getRequestTraceparent(args.request), () =>
+    traceRequest(args.tracer, args.trace, async () => {
+      await requireApiAuth(args.app, args.request, args.auth, args.tracer)
+      return args.run()
+    })
+  )
 
-export const traceRawRequest = traceRequest
+export const traceRawRequest = <T>(
+  tracer: HippoTracer,
+  input: {
+    name: string
+    attributes?: Record<string, string | number | boolean>
+  },
+  request: FastifyRequest,
+  run: () => Promise<T>
+) => withTraceContext(getRequestTraceparent(request), () => traceRequest(tracer, input, run))

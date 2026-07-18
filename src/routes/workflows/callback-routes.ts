@@ -34,6 +34,7 @@ export const registerCallbackRoutes = (
           route: "/v1/waits/:correlationKey/resume",
         }),
       },
+      request,
       async () => {
         const rawBody = (request.body ?? {}) as JsonValue
         requireCallbackAuth(app, request, rawBody, args.auth)
@@ -74,6 +75,7 @@ export const registerCallbackRoutes = (
           route: "/v1/external-sessions/:externalId/resume",
         }),
       },
+      request,
       async () => {
         const rawBody = (request.body ?? {}) as JsonValue
         requireCallbackAuth(app, request, rawBody, args.auth)
@@ -114,6 +116,7 @@ export const registerCallbackRoutes = (
           route: "/v1/external-sessions/:externalId/heartbeat",
         }),
       },
+      request,
       async () => {
         const rawBody = (request.body ?? {}) as JsonValue
         requireCallbackAuth(app, request, rawBody, args.auth)
@@ -209,6 +212,7 @@ export const registerCallbackRoutes = (
           route: "/v1/external-sessions/:externalId/events",
         }),
       },
+      request,
       async () => {
         const rawBody = (request.body ?? {}) as JsonValue
         requireCallbackAuth(app, request, rawBody, args.auth)

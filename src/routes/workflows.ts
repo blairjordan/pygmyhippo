@@ -358,6 +358,7 @@ export const createWorkflowRoutes = (args: {
                   "hippo.stream.trigger": trigger,
                 },
               },
+              request,
               async () => {
                 const events = await args.store.getRunEvents(params.runId)
 
