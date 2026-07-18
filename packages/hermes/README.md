@@ -9,8 +9,8 @@ npm install
 npm run build
 ```
 
-The root build copies the compiled runtime into this workspace package so the
-package manifest can be smoke-tested locally before any publish step is added.
+This workspace package builds its own distributable `dist` directory, matching
+the artifact that is published to npm.
 
 ## Hermes turns
 

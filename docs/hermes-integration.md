@@ -50,6 +50,10 @@ export const workflows = [defineWorkflow({
 See the independent [Hermes example](../examples/hermes-integration/) for the
 runner HTTP contract and deployment variables.
 
+For a complete runner process that invokes the Hermes CLI, signs callbacks,
+handles hard cancellation, and exports OTLP spans, start from
+[the runner example](../examples/hermes-runner/).
+
 ## Hermes MCP adapter
 
 The Hermes-specific layer is deliberately small:
