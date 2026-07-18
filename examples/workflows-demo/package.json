@@ -9,9 +9,9 @@
     "build": "tsc"
   },
   "dependencies": {
-    "pygmyhippo-core": "0.1.0",
-    "pygmyhippo-sdk": "0.1.0",
-    "pygmyhippo-server": "0.1.0",
+    "pygmyhippo-core": "0.1.1",
+    "pygmyhippo-sdk": "0.1.1",
+    "pygmyhippo-server": "0.1.1",
     "pg": "8.16.3",
     "zod": "4.1.5"
   },
