@@ -46,6 +46,30 @@ export const createWorkflowRoutes = (args: {
   registerSchedulesOperatorRoutes(app, args)
   registerCallbackRoutes(app, args)
 
+  app.get("/v1/workflows", async (request) => {
+    return traceAuthedRequest({
+      app,
+      auth: args.auth,
+      request,
+      tracer: args.tracer,
+      trace: {
+        name: "hippo.http.list_workflows",
+        attributes: createRouteTraceAttributes({
+          method: request.method,
+          operation: "http.list_workflows",
+          route: "/v1/workflows",
+        }),
+      },
+      run: async () => ({
+        workflows: args.engine.listWorkflows().map((workflow) => ({
+          name: workflow.name,
+          version: workflow.version,
+          title: workflow.title ?? workflow.name,
+        })),
+      }),
+    })
+  })
+
   app.post("/v1/workflows/:workflowName/runs", async (request, reply) => {
     return traceAuthedRequest({
       app,

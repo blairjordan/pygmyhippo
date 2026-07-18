@@ -18,5 +18,6 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/queries ./src/queries
 COPY --from=build /app/src/sql ./src/sql
 COPY --from=build /app/db ./db
+COPY --from=deps /app/node_modules/@dbmate/linux-x64/bin/dbmate /usr/local/bin/dbmate
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["sh", "-c", "dbmate up && npm run start"]

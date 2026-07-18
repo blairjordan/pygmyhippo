@@ -7,7 +7,7 @@ const main = async () => {
   await runHippoProcessRole({
     config,
     role: config.HIPPO_ROLE,
-    workflowsPath: workflowModulePath(),
+    workflowsPath: process.env.HIPPO_WORKFLOWS_PATH ?? workflowModulePath(),
   })
 }
 
